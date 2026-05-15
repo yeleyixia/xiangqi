@@ -1,0 +1,211 @@
+import React, { useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
+import { useLobbyStore } from '../store';
+import { initBoard, PIECE_NAMES } from '../lib/chess';
+
+export const HomePage: React.FC = () => {
+  const { rooms, fetchRooms, onlineCount } = useLobbyStore();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  useEffect(() => {
+    fetchRooms();
+    
+    // 绘制迷你棋盘
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    const w = canvas.width, h = canvas.height;
+    const cs = 32, ox = 16, oy = 16;
+    
+    // 背景
+    ctx.fillStyle = '#f5deb3';
+    ctx.fillRect(0, 0, w, h);
+    
+    // 边框
+    ctx.strokeStyle = '#8b4513';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(ox, oy, 8 * cs, 9 * cs);
+    
+    // 竖线
+    for (let i = 1; i < 8; i++) {
+      ctx.beginPath();
+      ctx.moveTo(ox + i * cs, oy);
+      ctx.lineTo(ox + i * cs, oy + 4 * cs);
+      ctx.stroke();
+      
+      ctx.beginPath();
+      ctx.moveTo(ox + i * cs, oy + 5 * cs);
+      ctx.lineTo(ox + i * cs, oy + 9 * cs);
+      ctx.stroke();
+    }
+    
+    // 横线
+    for (let i = 1; i < 9; i++) {
+      ctx.beginPath();
+      ctx.moveTo(ox, oy + i * cs);
+      ctx.lineTo(ox + 8 * cs, oy + i * cs);
+      ctx.stroke();
+    }
+    
+    // 楚河汉界
+    ctx.fillStyle = '#8b4513';
+    ctx.font = '14px serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('楚 河', ox + 2 * cs, oy + 4.5 * cs);
+    ctx.fillText('汉 界', ox + 6 * cs, oy + 4.5 * cs);
+    
+    // 棋子
+    const board = initBoard();
+    for (let r = 0; r < 10; r++) {
+      for (let c = 0; c < 9; c++) {
+        const piece = board[r][c];
+        if (piece) {
+          const px = ox + c * cs;
+          const py = oy + r * cs;
+          
+          ctx.beginPath();
+          ctx.arc(px, py, 13, 0, 2 * Math.PI);
+          ctx.fillStyle = '#fff8e7';
+          ctx.fill();
+          ctx.strokeStyle = piece.side === 'red' ? '#c0392b' : '#2c3e50';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          
+          ctx.fillStyle = piece.side === 'red' ? '#c0392b' : '#2c3e50';
+          ctx.font = 'bold 14px serif';
+          ctx.fillText(PIECE_NAMES[piece.type][piece.side], px, py);
+        }
+      }
+    }
+  }, []);
+  
+  return (
+    <>
+      <div className="bg-pattern"></div>
+      
+      <main className="hero">
+        <div className="hero-content">
+          <div className="hero-badge">经典国粹 · 智慧对弈</div>
+          <h1 className="hero-title">
+            <span className="title-line">纵横九宫</span>
+            <span className="title-line accent">楚河汉界</span>
+          </h1>
+          <p className="hero-desc">
+            在线中国象棋对弈平台，与天下棋友切磋棋艺。
+            支持实时对弈、棋局回放、等级排名，尽享象棋博弈之乐。
+          </p>
+          <div className="hero-actions">
+            <Link to="/game" className="btn btn-primary btn-lg">
+              <span className="btn-icon">⚔</span>
+              开始对弈
+            </Link>
+            <Link to="/lobby" className="btn btn-gold btn-lg">
+              <span className="btn-icon">🏛</span>
+              游戏大厅
+            </Link>
+          </div>
+        </div>
+        
+        <div className="hero-board">
+          <div className="mini-board">
+            <canvas ref={canvasRef} width={320} height={356}></canvas>
+          </div>
+          <div className="board-glow"></div>
+        </div>
+      </main>
+      
+      <section className="features">
+        <div className="container">
+          <h2 className="section-title">平台特色</h2>
+          <div className="feature-grid">
+            <div className="feature-card">
+              <div className="feature-icon">⚡</div>
+              <h3>实时对弈</h3>
+              <p>毫秒级延迟，走子即时同步，感受面对面的对弈体验</p>
+            </div>
+            <div className="feature-card">
+              <div className="feature-icon">🏆</div>
+              <h3>等级排名</h3>
+              <p>专业等级分系统，精准匹配实力相当的对手</p>
+            </div>
+            <div className="feature-card">
+              <div className="feature-icon">📋</div>
+              <h3>棋局回放</h3>
+              <p>完整记录每一步走法，复盘分析提升棋艺</p>
+            </div>
+            <div className="feature-card">
+              <div className="feature-icon">💬</div>
+              <h3>实时聊天</h3>
+              <p>对局中与对手交流，以棋会友，乐在棋中</p>
+            </div>
+            <div className="feature-card">
+              <div className="feature-icon">⏱</div>
+              <h3>多种计时</h3>
+              <p>支持固定时间、加时制等多种时间控制</p>
+            </div>
+            <div className="feature-card">
+              <div className="feature-icon">🛡</div>
+              <h3>公平竞技</h3>
+              <p>服务端验证走法，杜绝作弊，确保公平对弈</p>
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      <section className="rooms-preview">
+        <div className="container">
+          <h2 className="section-title">热门房间</h2>
+          <div className="room-table">
+            <div className="room-header">
+              <span className="room-col-id">房间号</span>
+              <span className="room-col-time">时间</span>
+              <span className="room-col-red">红方</span>
+              <span className="room-col-black">黑方</span>
+              <span className="room-col-action">操作</span>
+            </div>
+            {rooms.slice(0, 5).map(room => (
+              <div key={room.id} className="room-row">
+                <span className="room-col-id">#{room.id.slice(-3)}</span>
+                <span className="room-col-time">{room.time_control}</span>
+                <span className="room-col-red">
+                  {room.red_player ? '玩家' : '—'}
+                </span>
+                <span className="room-col-black">
+                  {room.black_player ? '玩家' : '—'}
+                </span>
+                <span className="room-col-action">
+                  <Link to={`/game/${room.id}`} className="btn btn-primary btn-xs">
+                    {room.status === 'waiting' ? '加入' : '观战'}
+                  </Link>
+                </span>
+              </div>
+            ))}
+            {rooms.length === 0 && (
+              <div className="empty-state">
+                <div className="empty-icon">🏠</div>
+                <div className="empty-title">暂无房间</div>
+                <div className="empty-desc">快去创建一个房间吧！</div>
+              </div>
+            )}
+          </div>
+          <div className="rooms-more">
+            <Link to="/lobby" className="btn btn-outline">查看全部房间 →</Link>
+          </div>
+        </div>
+      </section>
+      
+      <footer className="footer">
+        <div className="container">
+          <div className="footer-inner">
+            <span className="footer-brand">中国象棋在线对弈平台</span>
+            <span className="footer-copy">© 2026 版权所有 · 以棋会友 乐在棋中</span>
+          </div>
+        </div>
+      </footer>
+    </>
+  );
+};
