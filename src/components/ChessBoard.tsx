@@ -46,7 +46,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     // 加载棋盘背景图
     if (!boardImgRef.current) {
       const img = new Image();
-      img.src = '/board.png';
+      img.src = '/board.webp';
       img.onload = () => {
         boardLoadedRef.current = true;
         drawBoard(ctx);
