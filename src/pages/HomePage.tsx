@@ -58,7 +58,7 @@ export const HomePage: React.FC = () => {
     };
     
     const boardImg = new Image();
-    boardImg.src = '/board.png';
+    boardImg.src = '/board.webp';
     boardImg.onload = drawMiniBoard;
     boardImg.onerror = drawMiniBoard;
     
