@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { Piece, Position, Side } from '../types';
-import { PIECE_NAMES } from '../lib/chess';
+import { loadPiecesImage, drawPieceSprite } from '../lib/pieces';
 
 interface ChessBoardProps {
   board: (Piece | null)[][];
@@ -24,12 +24,17 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
   showCoordinates = false
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const boardImgRef = useRef<HTMLImageElement | null>(null);
+  const piecesImgRef = useRef<HTMLImageElement | null>(null);
+  const boardLoadedRef = useRef(false);
+  const piecesLoadedRef = useRef(false);
   
   const CS = 52; // 格子大小
   const OX = 30; // X偏移
   const OY = 28; // Y偏移
   const W = OX * 2 + 8 * CS;
   const H = OY * 2 + 9 * CS;
+  const PIECE_SIZE = Math.round(CS * 0.88); // 棋子占格子比例
   
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -38,64 +43,60 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
+    // 加载棋盘背景图
+    if (!boardImgRef.current) {
+      const img = new Image();
+      img.src = '/board.png';
+      img.onload = () => {
+        boardLoadedRef.current = true;
+        drawBoard(ctx);
+      };
+      img.onerror = () => {
+        boardLoadedRef.current = false;
+        drawBoard(ctx);
+      };
+      boardImgRef.current = img;
+    }
+    
+    // 加载棋子精灵图
+    if (!piecesImgRef.current) {
+      loadPiecesImage()
+        .then((img) => {
+          piecesLoadedRef.current = true;
+          piecesImgRef.current = img;
+          drawBoard(ctx);
+        })
+        .catch(() => {
+          piecesLoadedRef.current = false;
+          drawBoard(ctx);
+        });
+    }
+  }, []);
+  
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     drawBoard(ctx);
   }, [board, selectedPiece, validMoves, lastMove]);
   
   const drawBoard = (ctx: CanvasRenderingContext2D) => {
     // 清空画布
-    ctx.fillStyle = '#e8c97a';
-    ctx.fillRect(0, 0, W, H);
+    ctx.clearRect(0, 0, W, H);
     
-    // 棋盘底色
-    ctx.fillStyle = '#d4a04a';
-    ctx.fillRect(OX - 2, OY - 2, 8 * CS + 4, 9 * CS + 4);
-    ctx.fillStyle = '#f0d88a';
-    ctx.fillRect(OX, OY, 8 * CS, 9 * CS);
-    
-    // 外边框
-    ctx.strokeStyle = '#5a3010';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(OX, OY, 8 * CS, 9 * CS);
-    
-    // 竖线（楚河汉界处断开）
-    for (let i = 1; i < 8; i++) {
-      ctx.beginPath();
-      ctx.moveTo(OX + i * CS, OY);
-      ctx.lineTo(OX + i * CS, OY + 4 * CS);
-      ctx.stroke();
-      
-      ctx.beginPath();
-      ctx.moveTo(OX + i * CS, OY + 5 * CS);
-      ctx.lineTo(OX + i * CS, OY + 9 * CS);
-      ctx.stroke();
+    // 绘制棋盘背景图
+    if (boardLoadedRef.current && boardImgRef.current) {
+      ctx.drawImage(boardImgRef.current, 0, 0, W, H);
+    } else {
+      // 加载失败前的兜底背景
+      ctx.fillStyle = '#e8c97a';
+      ctx.fillRect(0, 0, W, H);
     }
-    
-    // 横线
-    for (let i = 1; i < 9; i++) {
-      ctx.beginPath();
-      ctx.moveTo(OX, OY + i * CS);
-      ctx.lineTo(OX + 8 * CS, OY + i * CS);
-      ctx.stroke();
-    }
-    
-    // 九宫格斜线
-    drawPalace(ctx, 3, 0, 5, 2);
-    drawPalace(ctx, 3, 7, 5, 9);
-    
-    // 楚河汉界
-    ctx.fillStyle = '#5a3010';
-    ctx.font = 'bold 22px "Noto Serif SC", serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('楚  河', OX + 2 * CS, OY + 4.5 * CS);
-    ctx.fillText('汉  界', OX + 6 * CS, OY + 4.5 * CS);
-    
-    // 炮位和兵位标记
-    drawCrosses(ctx);
     
     // 上一步走法高亮
     if (lastMove) {
-      ctx.fillStyle = 'rgba(212, 162, 78, 0.3)';
+      ctx.fillStyle = 'rgba(212, 162, 78, 0.35)';
       ctx.fillRect(
         OX + lastMove.from.col * CS - CS / 2,
         OY + lastMove.from.row * CS - CS / 2,
@@ -126,14 +127,14 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
       
       if (board[m.row][m.col]) {
         // 可吃子位置
-        ctx.strokeStyle = 'rgba(231, 76, 60, 0.7)';
+        ctx.strokeStyle = 'rgba(231, 76, 60, 0.85)';
         ctx.lineWidth = 2.5;
         ctx.beginPath();
         ctx.arc(mx, my, 20, 0, Math.PI * 2);
         ctx.stroke();
       } else {
         // 可走位置
-        ctx.fillStyle = 'rgba(231, 76, 60, 0.4)';
+        ctx.fillStyle = 'rgba(231, 76, 60, 0.5)';
         ctx.beginPath();
         ctx.arc(mx, my, 8, 0, Math.PI * 2);
         ctx.fill();
@@ -141,10 +142,14 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     });
     
     // 绘制棋子
-    for (let r = 0; r < 10; r++) {
-      for (let c = 0; c < 9; c++) {
-        if (board[r][c]) {
-          drawPiece(ctx, r, c, board[r][c]!);
+    if (piecesLoadedRef.current && piecesImgRef.current) {
+      for (let r = 0; r < 10; r++) {
+        for (let c = 0; c < 9; c++) {
+          if (board[r][c]) {
+            const x = OX + c * CS;
+            const y = OY + r * CS;
+            drawPieceSprite(ctx, board[r][c]!, x, y, PIECE_SIZE, piecesImgRef.current);
+          }
         }
       }
     }
@@ -152,8 +157,10 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     // 坐标标注
     if (showCoordinates) {
       ctx.fillStyle = '#5a3010';
-      ctx.font = '12px sans-serif';
+      ctx.font = 'bold 12px sans-serif';
       ctx.textAlign = 'center';
+      ctx.shadowColor = 'rgba(240, 216, 138, 0.8)';
+      ctx.shadowBlur = 4;
       
       for (let i = 0; i < 9; i++) {
         ctx.fillText(String(9 - i), OX + i * CS, OY - 12);
@@ -164,95 +171,9 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
         ctx.fillText(String(i + 1), OX - 12, OY + i * CS);
         ctx.fillText(String(i + 1), OX + 8 * CS + 12, OY + i * CS);
       }
-    }
-  };
-  
-  const drawPalace = (ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number) => {
-    ctx.beginPath();
-    ctx.moveTo(OX + x1 * CS, OY + y1 * CS);
-    ctx.lineTo(OX + x2 * CS, OY + y2 * CS);
-    ctx.stroke();
-    
-    ctx.beginPath();
-    ctx.moveTo(OX + x2 * CS, OY + y1 * CS);
-    ctx.lineTo(OX + x1 * CS, OY + y2 * CS);
-    ctx.stroke();
-  };
-  
-  const drawCrosses = (ctx: CanvasRenderingContext2D) => {
-    const pts: [number, number][] = [];
-    
-    for (let i = 0; i < 9; i += 2) {
-      pts.push([i, 3], [i, 6]);
-    }
-    pts.push([1, 2], [7, 2], [1, 7], [7, 7]);
-    
-    pts.forEach(([col, row]) => drawCrossMark(ctx, col, row));
-  };
-  
-  const drawCrossMark = (ctx: CanvasRenderingContext2D, col: number, row: number) => {
-    const x = OX + col * CS;
-    const y = OY + row * CS;
-    const d = 5;
-    const len = 10;
-    
-    ctx.strokeStyle = '#5a3010';
-    ctx.lineWidth = 1;
-    
-    const dirs: [number, number][] = [];
-    if (col > 0) dirs.push([-1, -1], [-1, 1]);
-    if (col < 8) dirs.push([1, -1], [1, 1]);
-    
-    dirs.forEach(([dx, dy]) => {
-      ctx.beginPath();
-      ctx.moveTo(x + dx * d, y + dy * d);
-      ctx.lineTo(x + dx * (d + len), y + dy * d);
-      ctx.stroke();
       
-      ctx.beginPath();
-      ctx.moveTo(x + dx * d, y + dy * d);
-      ctx.lineTo(x + dx * d, y + dy * (d + len));
-      ctx.stroke();
-    });
-  };
-  
-  const drawPiece = (ctx: CanvasRenderingContext2D, row: number, col: number, piece: Piece) => {
-    const x = OX + col * CS;
-    const y = OY + row * CS;
-    const radius = 22;
-    
-    // 阴影
-    ctx.save();
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
-    ctx.shadowBlur = 6;
-    ctx.shadowOffsetY = 2;
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fillStyle = '#f5e6c8';
-    ctx.fill();
-    ctx.restore();
-    
-    // 外圈
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.strokeStyle = piece.side === 'red' ? '#a02020' : '#1a1a1a';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    
-    // 内圈
-    ctx.beginPath();
-    ctx.arc(x, y, radius - 4, 0, Math.PI * 2);
-    ctx.strokeStyle = piece.side === 'red' ? '#a02020' : '#1a1a1a';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    
-    // 棋子名称
-    const name = PIECE_NAMES[piece.type][piece.side];
-    ctx.fillStyle = piece.side === 'red' ? '#a02020' : '#1a1a1a';
-    ctx.font = 'bold 22px "Noto Serif SC", serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(name, x, y + 1);
+      ctx.shadowBlur = 0;
+    }
   };
   
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {

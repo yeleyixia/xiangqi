@@ -6,13 +6,15 @@ import { HomePage } from './pages/HomePage';
 import { LobbyPage } from './pages/LobbyPage';
 import { GamePage } from './pages/GamePage';
 import { AuthPage } from './pages/AuthPage';
-import { useAuthStore, useLobbyStore } from './store';
+import { useAuthStore } from './store';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
+import { useOnlinePresence } from './hooks/useOnlinePresence';
 
 const App: React.FC = () => {
   const { setUser, setLoading, setGuest } = useAuthStore();
-  const { setOnlineCount } = useLobbyStore();
   const [initialized, setInitialized] = useState(false);
+  
+  useOnlinePresence();
   
   useEffect(() => {
     // 初始化认证状态
@@ -63,14 +65,6 @@ const App: React.FC = () => {
     };
     
     initAuth();
-    
-    // 模拟在线人数
-    setOnlineCount(Math.floor(Math.random() * 500) + 1000);
-    const interval = setInterval(() => {
-      setOnlineCount(Math.floor(Math.random() * 500) + 1000);
-    }, 30000);
-    
-    return () => clearInterval(interval);
   }, []);
   
   if (!initialized) {

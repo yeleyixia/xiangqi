@@ -15,7 +15,6 @@ export const Navbar: React.FC = () => {
     <nav className="navbar">
       <div className="nav-inner">
         <Link to="/" className="logo">
-          <span className="logo-icon">♟</span>
           <span className="logo-text">中国象棋</span>
         </Link>
         

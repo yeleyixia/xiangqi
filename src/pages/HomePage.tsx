@@ -1,7 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useLobbyStore } from '../store';
-import { initBoard, PIECE_NAMES } from '../lib/chess';
+import { initBoard } from '../lib/chess';
+import { loadPiecesImage, drawPieceSprite } from '../lib/pieces';
 
 export const HomePage: React.FC = () => {
   const { rooms, fetchRooms, onlineCount } = useLobbyStore();
@@ -18,69 +19,57 @@ export const HomePage: React.FC = () => {
     if (!ctx) return;
     
     const w = canvas.width, h = canvas.height;
-    const cs = 32, ox = 16, oy = 16;
-    
-    // 背景
-    ctx.fillStyle = '#f5deb3';
-    ctx.fillRect(0, 0, w, h);
-    
-    // 边框
-    ctx.strokeStyle = '#8b4513';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(ox, oy, 8 * cs, 9 * cs);
-    
-    // 竖线
-    for (let i = 1; i < 8; i++) {
-      ctx.beginPath();
-      ctx.moveTo(ox + i * cs, oy);
-      ctx.lineTo(ox + i * cs, oy + 4 * cs);
-      ctx.stroke();
-      
-      ctx.beginPath();
-      ctx.moveTo(ox + i * cs, oy + 5 * cs);
-      ctx.lineTo(ox + i * cs, oy + 9 * cs);
-      ctx.stroke();
-    }
-    
-    // 横线
-    for (let i = 1; i < 9; i++) {
-      ctx.beginPath();
-      ctx.moveTo(ox, oy + i * cs);
-      ctx.lineTo(ox + 8 * cs, oy + i * cs);
-      ctx.stroke();
-    }
-    
-    // 楚河汉界
-    ctx.fillStyle = '#8b4513';
-    ctx.font = '14px serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('楚 河', ox + 2 * cs, oy + 4.5 * cs);
-    ctx.fillText('汉 界', ox + 6 * cs, oy + 4.5 * cs);
-    
-    // 棋子
-    const board = initBoard();
-    for (let r = 0; r < 10; r++) {
-      for (let c = 0; c < 9; c++) {
-        const piece = board[r][c];
-        if (piece) {
-          const px = ox + c * cs;
-          const py = oy + r * cs;
-          
-          ctx.beginPath();
-          ctx.arc(px, py, 13, 0, 2 * Math.PI);
-          ctx.fillStyle = '#fff8e7';
-          ctx.fill();
-          ctx.strokeStyle = piece.side === 'red' ? '#c0392b' : '#2c3e50';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-          
-          ctx.fillStyle = piece.side === 'red' ? '#c0392b' : '#2c3e50';
-          ctx.font = 'bold 14px serif';
-          ctx.fillText(PIECE_NAMES[piece.type][piece.side], px, py);
+    // 根据 board.png 的实际网格位置计算缩放后的画布坐标
+    // 源图网格：横向 9 条线位于 x=67..870，纵向 10 条线位于 y=65..963.5
+    const sx = w / 941;
+    const sy = h / 1044;
+    const ox = 67 * sx;
+    const oy = 65 * sy;
+    const csx = ((870 - 67) / 8) * sx;
+    const csy = ((963.5 - 65) / 9) * sy;
+    const pieceSize = Math.round(((csx + csy) / 2) * 0.88);
+    let piecesImg: HTMLImageElement | null = null;
+
+    const drawMiniBoard = () => {
+      ctx.clearRect(0, 0, w, h);
+
+      // 背景图
+      if (boardImg.complete && boardImg.naturalWidth > 0) {
+        ctx.drawImage(boardImg, 0, 0, w, h);
+      } else {
+        ctx.fillStyle = '#f5deb3';
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      // 棋子
+      if (piecesImg) {
+        const board = initBoard();
+        for (let r = 0; r < 10; r++) {
+          for (let c = 0; c < 9; c++) {
+            const piece = board[r][c];
+            if (piece) {
+              const px = ox + c * csx;
+              const py = oy + r * csy;
+              drawPieceSprite(ctx, piece, px, py, pieceSize, piecesImg);
+            }
+          }
         }
       }
-    }
+    };
+    
+    const boardImg = new Image();
+    boardImg.src = '/board.png';
+    boardImg.onload = drawMiniBoard;
+    boardImg.onerror = drawMiniBoard;
+    
+    loadPiecesImage()
+      .then((img) => {
+        piecesImg = img;
+        drawMiniBoard();
+      })
+      .catch(() => {
+        drawMiniBoard();
+      });
   }, []);
   
   return (
@@ -202,7 +191,7 @@ export const HomePage: React.FC = () => {
         <div className="container">
           <div className="footer-inner">
             <span className="footer-brand">中国象棋在线对弈平台</span>
-            <span className="footer-copy">© 2026 版权所有 · 以棋会友 乐在棋中</span>
+            <span className="footer-copy">以棋会友 乐在棋中</span>
           </div>
         </div>
       </footer>
