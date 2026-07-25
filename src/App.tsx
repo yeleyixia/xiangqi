@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { ToastContainer } from './components/Toast';
 import { HomePage } from './pages/HomePage';
-import { LobbyPage } from './pages/LobbyPage';
-import { GamePage } from './pages/GamePage';
-import { AuthPage } from './pages/AuthPage';
+const LobbyPage = lazy(() => import('./pages/LobbyPage').then(m => ({ default: m.LobbyPage })));
+const GamePage = lazy(() => import('./pages/GamePage').then(m => ({ default: m.GamePage })));
+const AuthPage = lazy(() => import('./pages/AuthPage').then(m => ({ default: m.AuthPage })));
 import { useAuthStore } from './store';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { useOnlinePresence } from './hooks/useOnlinePresence';
@@ -80,6 +80,7 @@ const App: React.FC = () => {
     <BrowserRouter>
       <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
         <Navbar />
+        <Suspense fallback={<div className="loading"><div className="loading-spinner"></div><div className="loading-text">加载中...</div></div>}>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/lobby" element={<LobbyPage />} />
@@ -88,6 +89,7 @@ const App: React.FC = () => {
           <Route path="/auth" element={<AuthPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
         <ToastContainer />
       </div>
     </BrowserRouter>
