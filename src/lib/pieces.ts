@@ -1,6 +1,6 @@
 import type { Piece } from '../types';
 
-export const PIECE_SPRITE_URL = '/pieces.png';
+export const PIECE_SPRITE_URL = '/pieces.webp';
 
 // 棋子素材在精灵图中的源矩形（基于对 qizi.png 的连通区域检测）
 export const PIECE_RECTS: Record<string, { x: number; y: number; w: number; h: number }> = {
