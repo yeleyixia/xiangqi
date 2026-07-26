@@ -94,64 +94,100 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
       ctx.fillRect(0, 0, W, H);
     }
     
-    // 上一步走法高亮
+    // 上一步起始位置标记：实心小白点 + 外圈白圈，透明度 88%
     if (lastMove) {
-      ctx.fillStyle = 'rgba(212, 162, 78, 0.35)';
-      ctx.fillRect(
-        OX + lastMove.from.col * CS - CS / 2,
-        OY + lastMove.from.row * CS - CS / 2,
-        CS,
-        CS
-      );
-      ctx.fillRect(
-        OX + lastMove.to.col * CS - CS / 2,
-        OY + lastMove.to.row * CS - CS / 2,
-        CS,
-        CS
-      );
+      const fx = OX + lastMove.from.col * CS;
+      const fy = OY + lastMove.from.row * CS;
+      ctx.save();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
+      ctx.beginPath();
+      ctx.arc(fx, fy, Math.max(3, CS * 0.08), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.88)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(fx, fy, CS * 0.22, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
     }
-    
-    // 选中棋子高亮
-    if (selectedPiece) {
-      const sx = OX + selectedPiece.col * CS;
-      const sy = OY + selectedPiece.row * CS;
-      ctx.strokeStyle = '#e74c3c';
-      ctx.lineWidth = 2.5;
-      ctx.strokeRect(sx - CS / 2 + 2, sy - CS / 2 + 2, CS - 4, CS - 4);
-    }
-    
-    // 合法走法提示
-    validMoves.forEach(m => {
-      const mx = OX + m.col * CS;
-      const my = OY + m.row * CS;
-      
-      if (board[m.row][m.col]) {
-        // 可吃子位置
-        ctx.strokeStyle = 'rgba(231, 76, 60, 0.85)';
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.arc(mx, my, 20, 0, Math.PI * 2);
-        ctx.stroke();
-      } else {
-        // 可走位置
-        ctx.fillStyle = 'rgba(231, 76, 60, 0.5)';
-        ctx.beginPath();
-        ctx.arc(mx, my, 8, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    });
-    
-    // 绘制棋子
+
+    // 绘制棋子（先画非选中棋子，选中棋子最后画以实现上浮立体效果）
     if (piecesLoadedRef.current && piecesImgRef.current) {
       for (let r = 0; r < 10; r++) {
         for (let c = 0; c < 9; c++) {
-          if (board[r][c]) {
+          if (board[r][c] && !(selectedPiece && selectedPiece.row === r && selectedPiece.col === c)) {
             const x = OX + c * CS;
             const y = OY + r * CS;
             drawPieceSprite(ctx, board[r][c]!, x, y, PIECE_SIZE, piecesImgRef.current);
           }
         }
       }
+    }
+
+    // 上一步落子位置标记：棋子外围一个白圈，透明度 88%
+    if (lastMove) {
+      const tx = OX + lastMove.to.col * CS;
+      const ty = OY + lastMove.to.row * CS;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.88)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(tx, ty, PIECE_SIZE * 0.52, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 合法走法提示：低饱和度黄绿色小圆点 (#a4b359，88% 透明度)
+    const HINT_COLOR = '164, 179, 89';
+    validMoves.forEach(m => {
+      const mx = OX + m.col * CS;
+      const my = OY + m.row * CS;
+
+      if (board[m.row][m.col]) {
+        // 可吃子位置：外圈 + 内部小点
+        ctx.save();
+        ctx.strokeStyle = `rgba(${HINT_COLOR}, 0.88)`;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(mx, my, PIECE_SIZE * 0.48, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = `rgba(${HINT_COLOR}, 0.88)`;
+        ctx.beginPath();
+        ctx.arc(mx, my, PIECE_SIZE * 0.22, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } else {
+        // 可走位置：小圆点
+        ctx.save();
+        ctx.fillStyle = `rgba(${HINT_COLOR}, 0.88)`;
+        ctx.beginPath();
+        ctx.arc(mx, my, Math.max(5, CS * 0.13), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    });
+
+    // 选中棋子：上浮立体绘制（去掉绿光环，改为放大 + 上移 + 强阴影）
+    if (selectedPiece && piecesLoadedRef.current && piecesImgRef.current) {
+      const sx = OX + selectedPiece.col * CS;
+      const sy = OY + selectedPiece.row * CS;
+      const liftedSize = Math.round(PIECE_SIZE * 1.12);
+      const liftOffset = -CS * 0.12;
+
+      drawPieceSprite(
+        ctx,
+        board[selectedPiece.row][selectedPiece.col]!,
+        sx,
+        sy + liftOffset,
+        liftedSize,
+        piecesImgRef.current,
+        {
+          shadowColor: 'rgba(0, 0, 0, 0.45)',
+          shadowBlur: 14,
+          shadowOffsetX: 2,
+          shadowOffsetY: 6
+        }
+      );
     }
     
     // 坐标标注

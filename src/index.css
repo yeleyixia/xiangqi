@@ -488,5 +488,96 @@ body {
   .hero-actions { flex-direction: column; }
   .room-header, .room-row { grid-template-columns: 50px 70px 1fr auto !important; }
   .room-col-black, .lobby-table .room-col-state { display: none; }
-  .player-bar { width: 100%; max-width: 360px; }
+
+  /* 游戏页移动端：棋盘占满宽度，玩家角标对角分布 */
+  .game-main { padding: 0; }
+  .game-layout { width: 100%; padding: 0; gap: 12px; }
+  .game-board-area {
+    position: relative;
+    width: 100%;
+    max-width: 100vw;
+    gap: 0;
+    padding: 0 4px;
+  }
+  .board-wrapper {
+    width: 100%;
+    max-width: 100%;
+    border-radius: 4px;
+  }
+  .board-wrapper canvas {
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  /* 玩家信息改为对角浮动角标 */
+  .player-bar {
+    position: absolute;
+    z-index: 10;
+    width: auto;
+    max-width: none;
+    background: transparent;
+    border: none;
+    padding: 0;
+  }
+  .player-bar.top-bar {
+    top: 8px;
+    left: 8px;
+  }
+  .player-bar.bottom-bar {
+    bottom: 8px;
+    right: 8px;
+  }
+  .player-bar .timer { display: none; }
+  .player-bar .player-detail { display: none; }
+
+  .player-info {
+    position: relative;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .player-bar .player-detail {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+  .player-name {
+    font-size: 11px;
+    color: var(--text);
+    text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+    white-space: nowrap;
+  }
+  .player-rating-text {
+    font-size: 9px;
+    color: var(--gold-dim);
+  }
+  .player-avatar {
+    width: 44px;
+    height: 44px;
+    font-size: 18px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.45);
+  }
+
+  /* 右下角玩家头像装饰框 */
+  .bottom-bar .player-info::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid var(--gold);
+    box-shadow: 0 0 0 2px rgba(212,162,78,0.25), 0 0 12px rgba(212,162,78,0.35);
+    pointer-events: none;
+  }
+
+  /* 左上角玩家头像装饰框 */
+  .top-bar .player-info::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    border: 2px solid var(--text-muted);
+    box-shadow: 0 0 0 2px rgba(160,160,160,0.15), 0 0 8px rgba(160,160,160,0.2);
+    pointer-events: none;
+  }
 }

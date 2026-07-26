@@ -33,13 +33,21 @@ export function loadPiecesImage(): Promise<HTMLImageElement> {
   });
 }
 
+export interface DrawPieceOptions {
+  shadowColor?: string;
+  shadowBlur?: number;
+  shadowOffsetX?: number;
+  shadowOffsetY?: number;
+}
+
 export function drawPieceSprite(
   ctx: CanvasRenderingContext2D,
   piece: Piece,
   x: number,
   y: number,
   size: number,
-  image: HTMLImageElement
+  image: HTMLImageElement,
+  options?: DrawPieceOptions
 ) {
   const rect = PIECE_RECTS[getPieceKey(piece)];
   if (!rect) return;
@@ -50,9 +58,10 @@ export function drawPieceSprite(
   const dh = rect.h * scale;
 
   ctx.save();
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
-  ctx.shadowBlur = Math.max(3, size * 0.12);
-  ctx.shadowOffsetY = Math.max(1, size * 0.05);
+  ctx.shadowColor = options?.shadowColor ?? 'rgba(0, 0, 0, 0.35)';
+  ctx.shadowBlur = options?.shadowBlur ?? Math.max(3, size * 0.12);
+  ctx.shadowOffsetX = options?.shadowOffsetX ?? 0;
+  ctx.shadowOffsetY = options?.shadowOffsetY ?? Math.max(1, size * 0.05);
 
   ctx.drawImage(
     image,
