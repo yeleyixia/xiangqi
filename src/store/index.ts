@@ -172,10 +172,11 @@ export const useGameStore = create<GameStore>()(
       selectedPiece: null,
       validMoves: [],
       settings: {
-        soundEnabled: true,
+        soundEnabled: false,
         showHints: true,
         showCoordinates: false,
-        autoDrawOffer: false
+        autoDrawOffer: false,
+        showMoveLog: false
       },
       chatMessages: [],
       isConnecting: false,

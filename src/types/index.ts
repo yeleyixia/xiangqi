@@ -71,6 +71,7 @@ export interface GameSettings {
   showHints: boolean;
   showCoordinates: boolean;
   autoDrawOffer: boolean;
+  showMoveLog: boolean;
 }
 
 // 认证状态

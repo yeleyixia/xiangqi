@@ -20,8 +20,13 @@ export const GamePage: React.FC = () => {
   } = useGameStore();
   const { addToast } = useToastStore();
   
-  const [activeTab, setActiveTab] = useState<'chat' | 'history' | 'settings'>('chat');
   const [chatInput, setChatInput] = useState('');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false);
+  const [fxEffect, setFxEffect] = useState<{ type: 'capture' | 'check' | 'checkmate'; show: boolean } | null>(null);
+  const fxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingFxRef = useRef<'check' | 'checkmate' | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [redTime, setRedTime] = useState(600);
@@ -34,6 +39,40 @@ export const GamePage: React.FC = () => {
   
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // 清理特效定时器
+  useEffect(() => {
+    return () => {
+      if (fxTimerRef.current) {
+        clearTimeout(fxTimerRef.current);
+      }
+    };
+  }, []);
+
+  // 触发棋盘中央特效图（吃子/将军/绝杀），持续 3 秒
+  const triggerFx = (type: 'capture' | 'check' | 'checkmate', delay = 0) => {
+    if (fxTimerRef.current) {
+      clearTimeout(fxTimerRef.current);
+    }
+    const show = () => {
+      setFxEffect({ type, show: true });
+      fxTimerRef.current = setTimeout(() => {
+        setFxEffect(null);
+        fxTimerRef.current = null;
+        // 若吃子后排队了将军/绝杀，现在显示
+        if (pendingFxRef.current) {
+          const next = pendingFxRef.current;
+          pendingFxRef.current = null;
+          triggerFx(next);
+        }
+      }, 3000);
+    };
+    if (delay > 0) {
+      fxTimerRef.current = setTimeout(show, delay);
+    } else {
+      show();
+    }
+  };
   
   // 加载房间数据
   useEffect(() => {
@@ -185,15 +224,32 @@ export const GamePage: React.FC = () => {
         // 检查将军和将死
         const nextTurn = currentTurn === 'red' ? 'black' : 'red';
         setCurrentTurn(nextTurn);
-        
-        if (isInCheck(newBoard, nextTurn)) {
-          if (isCheckmated(newBoard, nextTurn)) {
-            setGameStatus('finished');
-            setWinner(currentTurn);
-            addToast(`${currentTurn === 'red' ? '红方' : '黑方'}获胜！将杀！`, 'success');
+
+        const inCheck = isInCheck(newBoard, nextTurn);
+        const hasCapture = captured !== null;
+        const isMate = inCheck && isCheckmated(newBoard, nextTurn);
+
+        // 吃子/将军/绝杀特效：吃子优先显示，吃完后再显示将军/绝杀
+        if (isMate) {
+          if (hasCapture) {
+            pendingFxRef.current = 'checkmate';
+            triggerFx('capture');
           } else {
-            addToast('将军！', 'info');
+            triggerFx('checkmate');
           }
+          setGameStatus('finished');
+          setWinner(currentTurn);
+          addToast(`${currentTurn === 'red' ? '红方' : '黑方'}获胜！将杀！`, 'success');
+        } else if (inCheck) {
+          if (hasCapture) {
+            pendingFxRef.current = 'check';
+            triggerFx('capture');
+          } else {
+            triggerFx('check');
+          }
+          addToast('将军！', 'info');
+        } else if (hasCapture) {
+          triggerFx('capture');
         }
         
         selectPiece(null);
@@ -314,7 +370,7 @@ export const GamePage: React.FC = () => {
               <div className="player-info">
                 <span className="player-avatar black-avatar">將</span>
                 <div className="player-detail">
-                  <span className="player-name">{mySide === 'black' ? (user?.username || '你') : '对手'}</span>
+                  <span className="player-name">{mySide === 'black' ? (user?.username || '游客') : '对手'}</span>
                   <span className="player-rating-text">
                     {isInCheck(localBoard, 'black') && currentTurn === 'black' ? '被将军！' : '黑方'}
                   </span>
@@ -326,23 +382,44 @@ export const GamePage: React.FC = () => {
             </div>
             
             {/* 棋盘 */}
-            <ChessBoard
-              board={localBoard}
-              selectedPiece={selectedPiece}
-              validMoves={settings.showHints ? validMoves : []}
-              currentTurn={currentTurn}
-              mySide={mySide}
-              onSquareClick={handleSquareClick}
-              lastMove={lastMove}
-              showCoordinates={settings.showCoordinates}
-            />
+            <div className="board-container">
+              <ChessBoard
+                board={localBoard}
+                selectedPiece={selectedPiece}
+                validMoves={settings.showHints ? validMoves : []}
+                currentTurn={currentTurn}
+                mySide={mySide}
+                onSquareClick={handleSquareClick}
+                lastMove={lastMove}
+                showCoordinates={settings.showCoordinates}
+              />
+              {fxEffect?.show && (
+                <img
+                  className="fx-effect-img"
+                  src={
+                    fxEffect.type === 'capture'
+                      ? '/capture.webp'
+                      : fxEffect.type === 'check'
+                      ? '/check.webp'
+                      : '/checkmate.webp'
+                  }
+                  alt={
+                    fxEffect.type === 'capture'
+                      ? '吃'
+                      : fxEffect.type === 'check'
+                      ? '将军'
+                      : '绝杀'
+                  }
+                />
+              )}
+            </div>
             
             {/* 红方信息 */}
             <div className="player-bar bottom-bar">
               <div className="player-info">
                 <span className="player-avatar red-avatar">帥</span>
                 <div className="player-detail">
-                  <span className="player-name">{mySide === 'red' ? (user?.username || '你') : '对手'}</span>
+                  <span className="player-name">{mySide === 'red' ? (user?.username || '游客') : '对手'}</span>
                   <span className="player-rating-text">
                     {isInCheck(localBoard, 'red') && currentTurn === 'red' ? '被将军！' : '红方'}
                   </span>
@@ -354,152 +431,77 @@ export const GamePage: React.FC = () => {
             </div>
           </div>
           
-          {/* 侧边栏 */}
-          <div className="game-sidebar">
-            {/* 游戏控制 */}
-            <div className="game-controls">
-              <button className="btn btn-danger btn-sm" onClick={handleResign} disabled={gameStatus === 'finished'}>
-                认输
-              </button>
-              <button className="btn btn-outline btn-sm" onClick={() => addToast('求和请求已发送', 'info')} disabled={gameStatus === 'finished'}>
-                求和
-              </button>
-              <button className="btn btn-outline btn-sm" onClick={handleUndo} disabled={moveHistory.length < 2 || gameStatus === 'finished'}>
-                悔棋
-              </button>
+        </div>
+
+        {/* 移动端折叠控制按钮 */}
+        <div className="mobile-controls">
+          <button 
+            className="mobile-fab chat-fab" 
+            onClick={() => { setMobileChatOpen(true); setMobileMenuOpen(false); setMobileSettingsOpen(false); }}
+            aria-label="聊天"
+          >
+            💬
+          </button>
+          <button 
+            className="mobile-fab menu-fab" 
+            onClick={() => { setMobileMenuOpen(true); setMobileChatOpen(false); setMobileSettingsOpen(false); }}
+            aria-label="菜单"
+          >
+            ▲
+          </button>
+        </div>
+        
+        {/* 移动端聊天面板 */}
+        {mobileChatOpen && (
+          <div className="mobile-panel mobile-chat-panel">
+            <div className="mobile-panel-header">
+              <span>聊天</span>
+              <button className="mobile-panel-close" onClick={() => setMobileChatOpen(false)}>✕</button>
             </div>
-            
-            {/* 标签页 */}
-            <div className="game-tabs">
-              <button 
-                className={`game-tab ${activeTab === 'chat' ? 'active' : ''}`}
-                onClick={() => setActiveTab('chat')}
-              >
-                聊天
-              </button>
-              <button 
-                className={`game-tab ${activeTab === 'history' ? 'active' : ''}`}
-                onClick={() => setActiveTab('history')}
-              >
-                记录
-              </button>
-              <button 
-                className={`game-tab ${activeTab === 'settings' ? 'active' : ''}`}
-                onClick={() => setActiveTab('settings')}
-              >
-                设置
-              </button>
-            </div>
-            
-            {/* 聊天 */}
-            <div className={`tab-content ${activeTab !== 'chat' ? 'hidden' : ''}`}>
-              <div className="chat-messages">
-                <div className="chat-msg system">系统：对弈开始，红方先行</div>
-                {chatMessages.map(msg => (
-                  <div 
-                    key={msg.id} 
-                    className={`chat-msg ${msg.user_id === user?.id ? 'self' : 'other'}`}
-                  >
-                    {msg.content}
-                  </div>
-                ))}
-                <div ref={chatEndRef} />
-              </div>
-              <div className="chat-input-wrap">
-                <input
-                  type="text"
-                  className="chat-input"
-                  placeholder="输入消息..."
-                  value={chatInput}
-                  onChange={e => setChatInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSendChat()}
-                  maxLength={100}
-                />
-                <button className="btn btn-primary btn-xs" onClick={handleSendChat}>
-                  发送
-                </button>
-              </div>
-            </div>
-            
-            {/* 走法记录 */}
-            <div className={`tab-content ${activeTab !== 'history' ? 'hidden' : ''}`}>
-              <div className="move-list">
-                {moveHistory.length === 0 ? (
-                  <div style={{ padding: '12px', color: 'var(--text-dim)', textAlign: 'center' }}>
-                    暂无走法记录
-                  </div>
-                ) : (
-                  moveHistory.reduce<{ rows: React.ReactNode[]; current: React.ReactNode[] }>((acc, move, i) => {
-                    const notation = posToNotation(move);
-                    if (i % 2 === 0) {
-                      if (acc.current.length > 0) acc.rows.push(
-                        <div key={acc.rows.length} className="move-row">{acc.current}</div>
-                      );
-                      acc.current = [
-                        <span key="num" className="move-num">{Math.floor(i / 2) + 1}.</span>,
-                        <span key="red" className="move-red">{notation}</span>
-                      ];
-                    } else {
-                      acc.current.push(<span key="black" className="move-black">{notation}</span>);
-                    }
-                    return acc;
-                  }, { rows: [], current: [] }).rows
-                )}
-              </div>
-            </div>
-            
-            {/* 设置 */}
-            <div className={`tab-content ${activeTab !== 'settings' ? 'hidden' : ''}`}>
-              <div className="settings-group">
-                <label className="setting-label">音效</label>
-                <label className="switch">
-                  <input 
-                    type="checkbox" 
-                    checked={settings.soundEnabled}
-                    onChange={e => updateSettings({ soundEnabled: e.target.checked })}
-                  />
-                  <span className="slider"></span>
-                </label>
-              </div>
-              <div className="settings-group">
-                <label className="setting-label">走子提示</label>
-                <label className="switch">
-                  <input 
-                    type="checkbox" 
-                    checked={settings.showHints}
-                    onChange={e => updateSettings({ showHints: e.target.checked })}
-                  />
-                  <span className="slider"></span>
-                </label>
-              </div>
-              <div className="settings-group">
-                <label className="setting-label">棋盘坐标</label>
-                <label className="switch">
-                  <input 
-                    type="checkbox" 
-                    checked={settings.showCoordinates}
-                    onChange={e => updateSettings({ showCoordinates: e.target.checked })}
-                  />
-                  <span className="slider"></span>
-                </label>
-              </div>
-            </div>
-            
-            {/* 游戏结束提示 */}
-            {gameStatus === 'finished' && (
-              <div style={{ 
-                marginTop: '12px', 
-                padding: '16px', 
-                background: 'var(--bg-card)', 
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius)',
-                textAlign: 'center'
-              }}>
-                <div style={{ fontSize: '18px', color: 'var(--gold)', marginBottom: '8px' }}>
-                  {winner === 'red' ? '红方获胜！' : '黑方获胜！'}
+            <div className="mobile-chat-messages">
+              <div className="chat-msg system">系统：对弈开始，红方先行</div>
+              {chatMessages.map(msg => (
+                <div 
+                  key={msg.id} 
+                  className={`chat-msg ${msg.user_id === user?.id ? 'self' : 'other'}`}
+                >
+                  {msg.content}
                 </div>
-                <button 
-                  className="btn btn-primary btn-sm"
+              ))}
+              <div ref={chatEndRef} />
+            </div>
+            <div className="mobile-chat-input">
+              <input
+                type="text"
+                className="chat-input"
+                placeholder="输入消息..."
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSendChat()}
+                maxLength={100}
+              />
+              <button className="btn btn-primary btn-xs" onClick={handleSendChat}>发送</button>
+            </div>
+          </div>
+        )}
+        
+        {/* 移动端操作菜单 */}
+        {mobileMenuOpen && (
+          <div className="mobile-panel mobile-menu-panel">
+            <div className="mobile-panel-header">
+              <span>操作</span>
+              <button className="mobile-panel-close" onClick={() => setMobileMenuOpen(false)}>✕</button>
+            </div>
+            <button className="mobile-menu-btn" onClick={() => { handleResign(); setMobileMenuOpen(false); }} disabled={gameStatus === 'finished'}>认输</button>
+            <button className="mobile-menu-btn" onClick={() => { addToast('求和请求已发送', 'info'); setMobileMenuOpen(false); }} disabled={gameStatus === 'finished'}>求和</button>
+            <button className="mobile-menu-btn" onClick={() => { handleUndo(); setMobileMenuOpen(false); }} disabled={moveHistory.length < 2 || gameStatus === 'finished'}>悔棋</button>
+            <button className="mobile-menu-btn" onClick={() => { setMobileMenuOpen(false); setMobileSettingsOpen(true); }}>设置</button>
+            {gameStatus === 'finished' && (
+              <>
+                <div className="mobile-gameover-divider" />
+                <div className="mobile-menu-result">{winner === 'red' ? '红方获胜！' : '黑方获胜！'}</div>
+                <button
+                  className="mobile-menu-btn mobile-menu-restart"
                   onClick={() => {
                     setLocalBoard(initBoard());
                     setMoveHistory([]);
@@ -509,14 +511,85 @@ export const GamePage: React.FC = () => {
                     const { minutes } = parseTimeControl('10+0');
                     setRedTime(minutes * 60);
                     setBlackTime(minutes * 60);
+                    setMobileMenuOpen(false);
                   }}
                 >
                   再来一局
                 </button>
-              </div>
+              </>
             )}
           </div>
-        </div>
+        )}
+        
+        {/* 移动端设置面板 */}
+        {mobileSettingsOpen && (
+          <div className="mobile-panel mobile-settings-panel">
+            <div className="mobile-panel-header">
+              <span>设置</span>
+              <button className="mobile-panel-close" onClick={() => setMobileSettingsOpen(false)}>✕</button>
+            </div>
+            <div className="mobile-settings-group">
+              <span>音效</span>
+              <label className="switch">
+                <input 
+                  type="checkbox" 
+                  checked={settings.soundEnabled}
+                  onChange={e => updateSettings({ soundEnabled: e.target.checked })}
+                />
+                <span className="slider"></span>
+              </label>
+            </div>
+            <div className="mobile-settings-group">
+              <span>走子提示</span>
+              <label className="switch">
+                <input 
+                  type="checkbox" 
+                  checked={settings.showHints}
+                  onChange={e => updateSettings({ showHints: e.target.checked })}
+                />
+                <span className="slider"></span>
+              </label>
+            </div>
+            <div className="mobile-settings-group">
+              <span>棋盘坐标</span>
+              <label className="switch">
+                <input 
+                  type="checkbox" 
+                  checked={settings.showCoordinates}
+                  onChange={e => updateSettings({ showCoordinates: e.target.checked })}
+                />
+                <span className="slider"></span>
+              </label>
+            </div>
+            <div className="mobile-settings-group">
+              <span>记录</span>
+              <label className="switch">
+                <input 
+                  type="checkbox" 
+                  checked={settings.showMoveLog}
+                  onChange={e => updateSettings({ showMoveLog: e.target.checked })}
+                />
+                <span className="slider"></span>
+              </label>
+            </div>
+          </div>
+        )}
+        
+        {/* 移动端底部记录条 */}
+        {settings.showMoveLog && (
+          <div className="mobile-move-log">
+            {moveHistory.length === 0 ? (
+              <span className="mobile-move-log-empty">暂无走法</span>
+            ) : (
+              moveHistory.map((move, i) => (
+                <span key={i} className={`mobile-move-log-item ${move.piece.side === 'red' ? 'red-move' : 'black-move'}`}>
+                  {i % 2 === 0 ? `${Math.floor(i / 2) + 1}.` : ''}{posToNotation(move)}
+                </span>
+              ))
+            )}
+          </div>
+        )}
+        
       </main>
     </>
   );
