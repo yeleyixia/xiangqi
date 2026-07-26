@@ -85,7 +85,6 @@ export const HomePage: React.FC = () => {
           </h1>
           <p className="hero-desc">
             在线中国象棋对弈平台，与天下棋友切磋棋艺。
-            支持实时对弈、棋局回放、等级排名，尽享象棋博弈之乐。
           </p>
           <div className="hero-actions">
             <Link to="/game" className="btn btn-primary btn-lg">

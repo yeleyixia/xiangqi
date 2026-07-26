@@ -2,22 +2,23 @@ import type { Piece } from '../types';
 
 export const PIECE_SPRITE_URL = '/pieces.webp';
 
-// 棋子素材在精灵图中的源矩形（基于对 qizi.png 的连通区域检测）
+// 木质棋子素材在精灵图中的源矩形（基于 2棋子换木质质感.png）
+// 布局：7 列 x 2 行；第 0 行黑方 R,N,B,A,K,C,P；第 1 行红方 R,N,B,A,K,C,P
 export const PIECE_RECTS: Record<string, { x: number; y: number; w: number; h: number }> = {
-  'black-R': { x: 53, y: 48, w: 208, h: 221 },   // 車
-  'black-N': { x: 266, y: 47, w: 206, h: 224 },  // 馬
-  'black-B': { x: 478, y: 48, w: 205, h: 223 },  // 象
-  'black-A': { x: 688, y: 48, w: 206, h: 225 },  // 士
-  'black-K': { x: 900, y: 47, w: 203, h: 223 },  // 將
-  'black-C': { x: 268, y: 456, w: 203, h: 221 }, // 炮
-  'black-P': { x: 57, y: 667, w: 209, h: 226 },  // 卒
-  'red-P': { x: 58, y: 1285, w: 207, h: 215 },   // 兵
-  'red-C': { x: 268, y: 1497, w: 204, h: 221 },  // 炮
-  'red-R': { x: 52, y: 1899, w: 209, h: 227 },   // 車
-  'red-N': { x: 264, y: 1898, w: 206, h: 228 },  // 馬
-  'red-B': { x: 474, y: 1897, w: 207, h: 227 },  // 相
-  'red-A': { x: 687, y: 1899, w: 208, h: 227 },  // 仕
-  'red-K': { x: 900, y: 1900, w: 205, h: 226 },  // 帥
+  'black-R': { x: 6, y: 8, w: 213, h: 238 },   // 車
+  'black-N': { x: 231, y: 9, w: 211, h: 237 },  // 馬
+  'black-B': { x: 455, y: 9, w: 211, h: 237 },  // 象
+  'black-A': { x: 677, y: 7, w: 215, h: 240 },  // 士
+  'black-K': { x: 904, y: 8, w: 209, h: 238 },  // 將
+  'black-C': { x: 1127, y: 10, w: 210, h: 234 }, // 炮
+  'black-P': { x: 1350, y: 9, w: 213, h: 237 },  // 卒
+  'red-R': { x: 6, y: 264, w: 212, h: 234 },     // 車
+  'red-N': { x: 231, y: 263, w: 211, h: 236 },   // 馬
+  'red-B': { x: 455, y: 263, w: 211, h: 236 },   // 相
+  'red-A': { x: 677, y: 263, w: 215, h: 237 },   // 仕
+  'red-K': { x: 903, y: 263, w: 210, h: 236 },   // 帥
+  'red-C': { x: 1128, y: 265, w: 209, h: 233 },  // 炮
+  'red-P': { x: 1351, y: 267, w: 211, h: 229 },  // 兵
 };
 
 export function getPieceKey(piece: Piece): string {

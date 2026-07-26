@@ -26,7 +26,6 @@ export const GamePage: React.FC = () => {
   const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false);
   const [fxEffect, setFxEffect] = useState<{ type: 'capture' | 'check' | 'checkmate'; show: boolean } | null>(null);
   const fxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingFxRef = useRef<'check' | 'checkmate' | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [redTime, setRedTime] = useState(600);
@@ -49,29 +48,22 @@ export const GamePage: React.FC = () => {
     };
   }, []);
 
-  // 触发棋盘中央特效图（吃子/将军/绝杀），持续 3 秒
-  const triggerFx = (type: 'capture' | 'check' | 'checkmate', delay = 0) => {
+  // 触发棋盘中央特效图（吃子/将军/绝杀）
+  // 吃子：3 秒；将军/绝杀：3.8 秒；同一手只显示一种特效（将军/绝杀优先）
+  const FX_DURATION: Record<'capture' | 'check' | 'checkmate', number> = {
+    capture: 3000,
+    check: 3800,
+    checkmate: 3800
+  };
+  const triggerFx = (type: 'capture' | 'check' | 'checkmate') => {
     if (fxTimerRef.current) {
       clearTimeout(fxTimerRef.current);
     }
-    const show = () => {
-      setFxEffect({ type, show: true });
-      fxTimerRef.current = setTimeout(() => {
-        setFxEffect(null);
-        fxTimerRef.current = null;
-        // 若吃子后排队了将军/绝杀，现在显示
-        if (pendingFxRef.current) {
-          const next = pendingFxRef.current;
-          pendingFxRef.current = null;
-          triggerFx(next);
-        }
-      }, 3000);
-    };
-    if (delay > 0) {
-      fxTimerRef.current = setTimeout(show, delay);
-    } else {
-      show();
-    }
+    setFxEffect({ type, show: true });
+    fxTimerRef.current = setTimeout(() => {
+      setFxEffect(null);
+      fxTimerRef.current = null;
+    }, FX_DURATION[type]);
   };
   
   // 加载房间数据
@@ -229,24 +221,14 @@ export const GamePage: React.FC = () => {
         const hasCapture = captured !== null;
         const isMate = inCheck && isCheckmated(newBoard, nextTurn);
 
-        // 吃子/将军/绝杀特效：吃子优先显示，吃完后再显示将军/绝杀
+        // 吃子/将军/绝杀特效：将军/绝杀优先，同一手只显示一种
         if (isMate) {
-          if (hasCapture) {
-            pendingFxRef.current = 'checkmate';
-            triggerFx('capture');
-          } else {
-            triggerFx('checkmate');
-          }
+          triggerFx('checkmate');
           setGameStatus('finished');
           setWinner(currentTurn);
           addToast(`${currentTurn === 'red' ? '红方' : '黑方'}获胜！将杀！`, 'success');
         } else if (inCheck) {
-          if (hasCapture) {
-            pendingFxRef.current = 'check';
-            triggerFx('capture');
-          } else {
-            triggerFx('check');
-          }
+          triggerFx('check');
           addToast('将军！', 'info');
         } else if (hasCapture) {
           triggerFx('capture');
@@ -292,18 +274,18 @@ export const GamePage: React.FC = () => {
   // 悔棋
   const handleUndo = () => {
     if (moveHistory.length < 2) return;
-    
+
     const newHistory = [...moveHistory];
     newHistory.pop(); // 移除最后一步
     const lastMove = newHistory.pop(); // 移除倒数第二步
-    
+
     // 重建棋盘
     const newBoard = initBoard();
     for (const move of newHistory) {
       newBoard[move.to.row][move.to.col] = move.piece;
       newBoard[move.from.row][move.from.col] = null;
     }
-    
+
     setLocalBoard(newBoard);
     setMoveHistory(newHistory);
     setCurrentTurn(prev => prev === 'red' ? 'black' : 'red');
@@ -362,7 +344,7 @@ export const GamePage: React.FC = () => {
     <>
       <div className="bg-pattern"></div>
       
-      <main className="game-main">
+      <main className={`game-main${settings.showMoveLog ? ' has-move-log' : ''}`}>
         <div className="game-layout">
           <div className="game-board-area">
             {/* 黑方信息 */}
@@ -414,49 +396,50 @@ export const GamePage: React.FC = () => {
               )}
             </div>
             
-            {/* 红方信息 */}
-            <div className="player-bar bottom-bar">
-              <div className="player-info">
-                <span className="player-avatar red-avatar">帥</span>
-                <div className="player-detail">
-                  <span className="player-name">{mySide === 'red' ? (user?.username || '游客') : '对手'}</span>
-                  <span className="player-rating-text">
-                    {isInCheck(localBoard, 'red') && currentTurn === 'red' ? '被将军！' : '红方'}
-                  </span>
-                </div>
+            {/* 底部控制条：左下角按钮 + 右下角红方信息 */}
+            <div className="game-bottom-bar">
+              <div className="mobile-controls">
+                <button 
+                  className={`mobile-fab chat-fab ${mobileChatOpen ? 'active' : ''}`} 
+                  onClick={() => { setMobileChatOpen(v => !v); setMobileMenuOpen(false); setMobileSettingsOpen(false); }}
+                  aria-label="聊天"
+                  aria-pressed={mobileChatOpen}
+                >
+                  💬
+                </button>
+                <button 
+                  className={`mobile-fab menu-fab ${mobileMenuOpen || mobileSettingsOpen ? 'active' : ''}`} 
+                  onClick={() => { setMobileMenuOpen(v => !v); setMobileChatOpen(false); setMobileSettingsOpen(false); }}
+                  aria-label="菜单"
+                  aria-pressed={mobileMenuOpen || mobileSettingsOpen}
+                >
+                  ▲
+                </button>
               </div>
-              <div className={`timer ${currentTurn === 'red' ? 'timer-active' : ''} ${redTime < 30 ? 'timer-danger' : ''}`}>
-                {formatTime(redTime)}
+              <div className="player-bar bottom-bar">
+                <div className="player-info">
+                  <span className="player-avatar red-avatar">帥</span>
+                  <div className="player-detail">
+                    <span className="player-name">{mySide === 'red' ? (user?.username || '游客') : '对手'}</span>
+                    <span className="player-rating-text">
+                      {isInCheck(localBoard, 'red') && currentTurn === 'red' ? '被将军！' : '红方'}
+                    </span>
+                  </div>
+                </div>
+                <div className={`timer ${currentTurn === 'red' ? 'timer-active' : ''} ${redTime < 30 ? 'timer-danger' : ''}`}>
+                  {formatTime(redTime)}
+                </div>
               </div>
             </div>
           </div>
           
         </div>
 
-        {/* 移动端折叠控制按钮 */}
-        <div className="mobile-controls">
-          <button 
-            className="mobile-fab chat-fab" 
-            onClick={() => { setMobileChatOpen(true); setMobileMenuOpen(false); setMobileSettingsOpen(false); }}
-            aria-label="聊天"
-          >
-            💬
-          </button>
-          <button 
-            className="mobile-fab menu-fab" 
-            onClick={() => { setMobileMenuOpen(true); setMobileChatOpen(false); setMobileSettingsOpen(false); }}
-            aria-label="菜单"
-          >
-            ▲
-          </button>
-        </div>
-        
         {/* 移动端聊天面板 */}
         {mobileChatOpen && (
           <div className="mobile-panel mobile-chat-panel">
             <div className="mobile-panel-header">
               <span>聊天</span>
-              <button className="mobile-panel-close" onClick={() => setMobileChatOpen(false)}>✕</button>
             </div>
             <div className="mobile-chat-messages">
               <div className="chat-msg system">系统：对弈开始，红方先行</div>
@@ -480,7 +463,7 @@ export const GamePage: React.FC = () => {
                 onKeyDown={e => e.key === 'Enter' && handleSendChat()}
                 maxLength={100}
               />
-              <button className="btn btn-primary btn-xs" onClick={handleSendChat}>发送</button>
+              <button className="chat-send-btn" onClick={handleSendChat} aria-label="发送">➤</button>
             </div>
           </div>
         )}
@@ -488,10 +471,6 @@ export const GamePage: React.FC = () => {
         {/* 移动端操作菜单 */}
         {mobileMenuOpen && (
           <div className="mobile-panel mobile-menu-panel">
-            <div className="mobile-panel-header">
-              <span>操作</span>
-              <button className="mobile-panel-close" onClick={() => setMobileMenuOpen(false)}>✕</button>
-            </div>
             <button className="mobile-menu-btn" onClick={() => { handleResign(); setMobileMenuOpen(false); }} disabled={gameStatus === 'finished'}>认输</button>
             <button className="mobile-menu-btn" onClick={() => { addToast('求和请求已发送', 'info'); setMobileMenuOpen(false); }} disabled={gameStatus === 'finished'}>求和</button>
             <button className="mobile-menu-btn" onClick={() => { handleUndo(); setMobileMenuOpen(false); }} disabled={moveHistory.length < 2 || gameStatus === 'finished'}>悔棋</button>
@@ -526,7 +505,6 @@ export const GamePage: React.FC = () => {
           <div className="mobile-panel mobile-settings-panel">
             <div className="mobile-panel-header">
               <span>设置</span>
-              <button className="mobile-panel-close" onClick={() => setMobileSettingsOpen(false)}>✕</button>
             </div>
             <div className="mobile-settings-group">
               <span>音效</span>

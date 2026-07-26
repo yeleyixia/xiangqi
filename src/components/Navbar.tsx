@@ -9,6 +9,10 @@ export const Navbar: React.FC = () => {
   const { onlineCount } = useLobbyStore();
   const [showUserMenu, setShowUserMenu] = useState(false);
 
+  // 对弈页面默认隐藏顶部导航栏，让棋盘占据更大空间
+  const isGamePage = location.pathname.startsWith('/game');
+  if (isGamePage) return null;
+
   const isActive = (path: string) => location.pathname === path;
 
   return (
