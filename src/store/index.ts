@@ -56,11 +56,12 @@ interface LobbyStore {
   setOnlineCount: (count: number) => void;
   setLoading: (loading: boolean) => void;
   fetchRooms: () => Promise<void>;
+  cleanupStaleRooms: () => Promise<number>;
   createRoom: (name: string, timeControl: TimeControl) => Promise<Room | null>;
   joinRoom: (roomId: string, side: Side) => Promise<boolean>;
 }
 
-export const useLobbyStore = create<LobbyStore>((set) => ({
+export const useLobbyStore = create<LobbyStore>((set, get) => ({
   rooms: [],
   onlineCount: 0,
   isLoading: false,
@@ -87,6 +88,24 @@ export const useLobbyStore = create<LobbyStore>((set) => ({
       set({ rooms: data });
     }
     set({ isLoading: false });
+  },
+  
+  // 清理过期房间：根据创建时间 + 时间控制时长自动清空，释放数据与资源
+  cleanupStaleRooms: async () => {
+    if (!isSupabaseConfigured()) return 0;
+    
+    // 调用服务端 RPC（数据库端还配置了 pg_cron 每分钟兜底清理）
+    const { data, error } = await supabase.rpc('cleanup_stale_rooms');
+    if (error) {
+      console.error('cleanup_stale_rooms RPC error:', error);
+      return 0;
+    }
+    
+    // 清理后刷新列表，保证大厅展示与数据库一致
+    if (typeof data === 'number' && data > 0) {
+      get().fetchRooms();
+    }
+    return data ?? 0;
   },
   createRoom: async (name: string, timeControl: TimeControl) => {
     const user = useAuthStore.getState().user;
@@ -145,6 +164,7 @@ interface GameStore {
   chatMessages: ChatMessage[];
   isConnecting: boolean;
   error: string | null;
+  roomDeleted: boolean;
   
   setRoom: (room: Room | null) => void;
   setMySide: (side: Side | null) => void;
@@ -155,6 +175,7 @@ interface GameStore {
   setChatMessages: (msgs: ChatMessage[]) => void;
   setConnecting: (connecting: boolean) => void;
   setError: (error: string | null) => void;
+  setRoomDeleted: (deleted: boolean) => void;
   
   // 游戏操作
   startLocalGame: (timeControl?: TimeControl) => void;
@@ -188,6 +209,7 @@ export const useGameStore = create<GameStore>()(
       chatMessages: [],
       isConnecting: false,
       error: null,
+      roomDeleted: false,
       
       setRoom: (room) => set({ room }),
       setMySide: (side) => set({ mySide: side }),
@@ -202,6 +224,7 @@ export const useGameStore = create<GameStore>()(
       setChatMessages: (msgs) => set({ chatMessages: msgs }),
       setConnecting: (connecting) => set({ isConnecting: connecting }),
       setError: (error) => set({ error }),
+      setRoomDeleted: (deleted) => set({ roomDeleted: deleted }),
       
       startLocalGame: (timeControl: TimeControl = '10+0') => {
         const { minutes } = parseTimeControl(timeControl);
@@ -226,7 +249,8 @@ export const useGameStore = create<GameStore>()(
           mySide: null,
           selectedPiece: null,
           validMoves: [],
-          chatMessages: []
+          chatMessages: [],
+          roomDeleted: false
         });
       },
       
@@ -438,6 +462,19 @@ export const useGameStore = create<GameStore>()(
             },
             (payload) => {
               set({ room: payload.new as Room });
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: 'DELETE',
+              schema: 'public',
+              table: 'rooms',
+              filter: `id=eq.${roomId}`
+            },
+            () => {
+              // 房间被自动清理（超时清空）：标记后由 GamePage 引导玩家返回大厅
+              set({ roomDeleted: true, room: null });
             }
           )
           .on(

@@ -1054,3 +1054,64 @@ $$ LANGUAGE plpgsql;
 -- 初始化棋盘函数授权（创建房间时前端使用）
 GRANT EXECUTE ON FUNCTION public.init_chess_board() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.init_chess_board() TO anon;
+
+-- =====================================================================
+-- 房间自动清理：根据创建时间 + 时间控制时长自动清空过期房间，释放数据与资源
+-- =====================================================================
+
+-- 清理过期房间函数：
+-- 1. waiting 房间：超过 10 分钟无玩家加入则清理
+-- 2. playing 房间：超过对应时间控制时长后自动清理
+-- 3. finished 房间：超过 10 分钟自动清理（保留短暂结果展示）
+-- 返回被清理的房间数量
+CREATE OR REPLACE FUNCTION public.cleanup_stale_rooms()
+RETURNS INTEGER
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  cleaned INTEGER := 0;
+BEGIN
+  -- 等待中的房间：创建后超过 10 分钟仍无人加入，直接清理
+  DELETE FROM rooms
+  WHERE status = 'waiting'
+    AND created_at < NOW() - INTERVAL '10 minutes'
+    AND (red_player IS NULL OR black_player IS NULL);
+  cleaned := cleaned + ROW_COUNT;
+
+  -- 对弈中的房间：从创建时间起超过对应时间控制时长自动清理
+  DELETE FROM rooms
+  WHERE status = 'playing'
+    AND created_at < NOW() - (
+      COALESCE((regexp_split_to_array(time_control, '\+'))[1]::INT, 10) * INTERVAL '1 minute'
+    );
+  cleaned := cleaned + ROW_COUNT;
+
+  -- 已结束的房间：结束后超过 10 分钟自动清理
+  DELETE FROM rooms
+  WHERE status = 'finished'
+    AND updated_at < NOW() - INTERVAL '10 minutes';
+  cleaned := cleaned + ROW_COUNT;
+
+  RETURN cleaned;
+END;
+$$;
+
+-- 授权已登录用户调用（前端大厅加载时可即时触发清理）
+GRANT EXECUTE ON FUNCTION public.cleanup_stale_rooms() TO authenticated;
+
+-- 注册到 pg_cron 定时任务（可选）：每分钟执行一次。
+-- 若项目未启用 pg_cron 扩展，则跳过定时任务（由前端进入大厅时的 RPC 清理兑底）
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'xiangqi-cleanup-stale-rooms') THEN
+      PERFORM cron.unschedule('xiangqi-cleanup-stale-rooms');
+    END IF;
+    PERFORM cron.schedule('xiangqi-cleanup-stale-rooms', '* * * * *', 'SELECT public.cleanup_stale_rooms()');
+  END IF;
+EXCEPTION WHEN undefined_table THEN
+  -- pg_cron 未启用，忽略（由前端 RPC 触发清理兑底）
+  NULL;
+END;
+$$;

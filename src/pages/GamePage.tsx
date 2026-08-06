@@ -15,7 +15,7 @@ export const GamePage: React.FC = () => {
     room, setRoom, mySide, setMySide, 
     selectedPiece, selectPiece, validMoves, setValidMoves,
     settings, updateSettings,
-    chatMessages,
+    chatMessages, roomDeleted,
     subscribeToRoom, makeMove: storeMakeMove, joinRoom, startLocalGame, undoLocalMove, resign, timeout, sendChat
   } = useGameStore();
   const { addToast } = useToastStore();
@@ -382,6 +382,23 @@ export const GamePage: React.FC = () => {
         <div className="empty-state" style={{ minHeight: '100vh' }}>
           <div className="empty-icon">😢</div>
           <div className="empty-title">{error}</div>
+          <button className="btn btn-primary" onClick={() => navigate('/lobby')}>
+            返回大厅
+          </button>
+        </div>
+      </>
+    );
+  }
+  
+  // 房间因超时被自动清空：提示玩家并引导返回大厅
+  if (roomDeleted) {
+    return (
+      <>
+        <div className="bg-pattern"></div>
+        <div className="empty-state" style={{ minHeight: '100vh' }}>
+          <div className="empty-icon">⏳</div>
+          <div className="empty-title">房间已清空</div>
+          <div className="empty-desc">该对弈房间已超时被自动清空，数据已释放。</div>
           <button className="btn btn-primary" onClick={() => navigate('/lobby')}>
             返回大厅
           </button>

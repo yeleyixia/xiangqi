@@ -9,7 +9,6 @@ interface CreateRoomModalProps {
 }
 
 const TIME_OPTIONS: { value: TimeControl; label: string; desc: string }[] = [
-  { value: '3+0', label: '3分钟', desc: '快棋' },
   { value: '5+0', label: '5分钟', desc: '快棋' },
   { value: '5+3', label: '5分+3秒', desc: '快棋' },
   { value: '10+0', label: '10分钟', desc: '标准' },

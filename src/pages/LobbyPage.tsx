@@ -7,14 +7,15 @@ import type { RoomStatus } from '../types';
 import { supabase } from '../lib/supabase';
 
 export const LobbyPage: React.FC = () => {
-  const { rooms, fetchRooms, isLoading, onlineCount } = useLobbyStore();
+  const { rooms, fetchRooms, isLoading, onlineCount, cleanupStaleRooms } = useLobbyStore();
   const { user } = useAuthStore();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [page, setPage] = useState(1);
   const pageSize = 10;
   
   useEffect(() => {
-    fetchRooms();
+    // 进入大厅时先清理过期房间（数据库端另有 pg_cron 每分钟兑底清理），再刷新列表
+    cleanupStaleRooms().then(() => fetchRooms());
     
     // 订阅房间更新
     const channel = supabase
