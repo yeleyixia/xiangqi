@@ -2,16 +2,18 @@ import type { Piece } from '../types';
 
 export const PIECE_SPRITE_URL = '/pieces.webp';
 
-// 木质棋子素材在精灵图中的源矩形（基于 2棋子换木质质感.png）
+// 木质棋子素材在精灵图中的源矩形（基于 红上黑下透明.png）
 // 布局：7 列 x 2 行；第 0 行黑方 R,N,B,A,K,C,P；第 1 行红方 R,N,B,A,K,C,P
+// 方向约定：素材按「红方视角」绘制——红子文字正立、黑子文字随黑方在棋盘上方而倒置。
+// 执黑视角时棋盘整盘旋转 180°，黑子自然正立、红子自然倒置，无需额外旋转棋子。
 export const PIECE_RECTS: Record<string, { x: number; y: number; w: number; h: number }> = {
-  'black-R': { x: 6, y: 8, w: 213, h: 238 },   // 車
-  'black-N': { x: 231, y: 9, w: 211, h: 237 },  // 馬
-  'black-B': { x: 455, y: 9, w: 211, h: 237 },  // 象
-  'black-A': { x: 677, y: 7, w: 215, h: 240 },  // 士
-  'black-K': { x: 904, y: 8, w: 209, h: 238 },  // 將
-  'black-C': { x: 1127, y: 10, w: 210, h: 234 }, // 炮
-  'black-P': { x: 1350, y: 9, w: 213, h: 237 },  // 卒
+  'black-R': { x: 6, y: 8, w: 213, h: 238 },   // 車（倒置）
+  'black-N': { x: 231, y: 9, w: 211, h: 237 },  // 馬（倒置）
+  'black-B': { x: 455, y: 9, w: 211, h: 237 },  // 象（倒置）
+  'black-A': { x: 677, y: 7, w: 215, h: 240 },  // 士（倒置）
+  'black-K': { x: 904, y: 8, w: 209, h: 238 },  // 將（倒置）
+  'black-C': { x: 1127, y: 10, w: 210, h: 234 }, // 砲（倒置）
+  'black-P': { x: 1350, y: 9, w: 213, h: 237 },  // 卒（倒置）
   'red-R': { x: 6, y: 264, w: 212, h: 234 },     // 車
   'red-N': { x: 231, y: 263, w: 211, h: 236 },   // 馬
   'red-B': { x: 455, y: 263, w: 211, h: 236 },   // 相
@@ -39,9 +41,6 @@ export interface DrawPieceOptions {
   shadowBlur?: number;
   shadowOffsetX?: number;
   shadowOffsetY?: number;
-  // 棋盘整盘 180° 旋转（执黑视角）时置为 true：在棋子自身中心再旋转 180°
-  // 抵消整盘旋转，保证棋子上的文字始终正立可读（位置不受影响）。
-  upright?: boolean;
 }
 
 export function drawPieceSprite(
@@ -67,35 +66,17 @@ export function drawPieceSprite(
   ctx.shadowOffsetX = options?.shadowOffsetX ?? 0;
   ctx.shadowOffsetY = options?.shadowOffsetY ?? Math.max(1, size * 0.05);
 
-  if (options?.upright) {
-    // 执黑视角：整盘已绕棋盘中心旋转 180°，这里在棋子自身中心再旋转 180°，
-    // 净效果为不旋转，棋子文字保持正立可读；位置由整盘旋转负责，不受影响。
-    ctx.translate(x, y);
-    ctx.rotate(Math.PI);
-    ctx.drawImage(
-      image,
-      rect.x,
-      rect.y,
-      rect.w,
-      rect.h,
-      -dw / 2,
-      -dh / 2,
-      dw,
-      dh
-    );
-  } else {
-    ctx.drawImage(
-      image,
-      rect.x,
-      rect.y,
-      rect.w,
-      rect.h,
-      x - dw / 2,
-      y - dh / 2,
-      dw,
-      dh
-    );
-  }
+  ctx.drawImage(
+    image,
+    rect.x,
+    rect.y,
+    rect.w,
+    rect.h,
+    x - dw / 2,
+    y - dh / 2,
+    dw,
+    dh
+  );
 
   ctx.restore();
 }
