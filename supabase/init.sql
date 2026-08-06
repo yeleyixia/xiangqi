@@ -821,8 +821,9 @@ BEGIN
   SET board = new_board,
       move_history = new_history,
       current_turn = next_turn,
-      red_time = calc_red_time + CASE WHEN next_turn = 'red' THEN increment ELSE 0 END,
-      black_time = calc_black_time + CASE WHEN next_turn = 'black' THEN increment ELSE 0 END,
+      -- Fischer 加时：走子方（current_turn 方）走完后给自己加 increment
+      red_time = calc_red_time + CASE WHEN r.current_turn = 'red' THEN increment ELSE 0 END,
+      black_time = calc_black_time + CASE WHEN r.current_turn = 'black' THEN increment ELSE 0 END,
       last_move_at = NOW(),
       status = CASE WHEN win_side IS NOT NULL THEN 'finished' ELSE status END,
       winner = win_side,
@@ -991,14 +992,10 @@ GRANT SELECT ON TABLE public.rooms TO anon;
 GRANT SELECT ON TABLE public.chat_messages TO anon;
 GRANT SELECT ON TABLE public.game_records TO anon;
 
--- 初始化棋盘函数授权（创建房间时前端使用）
-GRANT EXECUTE ON FUNCTION public.init_chess_board() TO authenticated;
-GRANT EXECUTE ON FUNCTION public.init_chess_board() TO anon;
-
 -- =====================================================================
 -- 初始化棋盘数据的函数
 -- =====================================================================
-CREATE OR REPLACE FUNCTION init_chess_board()
+CREATE OR REPLACE FUNCTION public.init_chess_board()
 RETURNS JSONB AS $$
 DECLARE
   board JSONB := '[]'::JSONB;
@@ -1053,3 +1050,7 @@ BEGIN
   RETURN board;
 END;
 $$ LANGUAGE plpgsql;
+
+-- 初始化棋盘函数授权（创建房间时前端使用）
+GRANT EXECUTE ON FUNCTION public.init_chess_board() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.init_chess_board() TO anon;

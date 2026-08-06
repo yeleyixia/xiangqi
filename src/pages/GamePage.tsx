@@ -99,7 +99,7 @@ export const GamePage: React.FC = () => {
       if (room.red_player === user.id) setMySide('red');
       else if (room.black_player === user.id) setMySide('black');
     }
-  }, [room]);
+  }, [room, user]);
   
   // 加载房间
   const loadRoom = async () => {
@@ -233,8 +233,9 @@ export const GamePage: React.FC = () => {
     
     const piece = board[row]?.[col];
     
-    // 联网对局：只能选择己方棋子
-    if (piece && !isLocal && mySide && piece.side !== mySide) {
+    // 联网对局：未选中棋子时，只能选择己方棋子
+    // 注意：若已选中棋子，点击敌方棋子是"吃子"动作，不能被这里拦截
+    if (piece && !isLocal && mySide && piece.side !== mySide && !selectedPiece) {
       addToast('只能移动自己的棋子', 'info');
       return;
     }
