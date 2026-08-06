@@ -11,6 +11,11 @@ export const PIECE_NAMES: Record<PieceType, Record<Side, string>> = {
   P: { red: '兵', black: '卒' }
 };
 
+// 深拷贝棋盘（内外两层都复制，避免共享行引用）
+export function cloneBoard(board: (Piece | null)[][]): (Piece | null)[][] {
+  return board.map(row => [...row]);
+}
+
 // 初始化棋盘
 export function initBoard(): (Piece | null)[][] {
   const board: (Piece | null)[][] = Array.from({ length: 10 }, () => Array(9).fill(null));
@@ -208,7 +213,7 @@ export function kingsFacing(board: (Piece | null)[][]): boolean {
   return true;
 }
 
-// 获取合法走法（考虑将军和对脸）
+// 获取合法走法（考虑将军、对脸，且不允许直接吃掉对方将/帅）
 export function getValidMoves(board: (Piece | null)[][], row: number, col: number): Position[] {
   const piece = board[row][col];
   if (!piece) return [];
@@ -217,8 +222,14 @@ export function getValidMoves(board: (Piece | null)[][], row: number, col: numbe
   const side = piece.side;
   
   return rawMoves.filter(m => {
+    const target = board[m.row][m.col];
+    // 不允许吃对方的将/帅（应将死视为一步完成，由 isCheckmated 判定胜负）
+    if (target && target.type === 'K' && target.side !== side) {
+      return false;
+    }
+    
     // 模拟走子
-    const captured = board[m.row][m.col];
+    const captured = target;
     board[m.row][m.col] = piece;
     board[row][col] = null;
     
@@ -232,14 +243,14 @@ export function getValidMoves(board: (Piece | null)[][], row: number, col: numbe
   });
 }
 
-// 执行走子
+// 执行走子（内部深拷贝棋盘，不修改原棋盘）
 export function makeMove(
   board: (Piece | null)[][],
   from: Position,
   to: Position,
   moveHistory: Move[]
 ): { board: (Piece | null)[][]; moveHistory: Move[]; captured: Piece | null } {
-  const newBoard = board.map(row => [...row]);
+  const newBoard = cloneBoard(board);
   const piece = newBoard[from.row][from.col];
   const captured = newBoard[to.row][to.col];
   
@@ -268,7 +279,7 @@ export function undoMove(
 ): { board: (Piece | null)[][]; moveHistory: Move[] } | null {
   if (moveHistory.length === 0) return null;
   
-  const newBoard = board.map(row => [...row]);
+  const newBoard = cloneBoard(board);
   const newHistory = [...moveHistory];
   const lastMove = newHistory.pop()!;
   
@@ -281,8 +292,10 @@ export function undoMove(
   };
 }
 
-// 检查是否被将死
+// 检查是否被将死（未处于被将军状态时直接返回 false，减少无谓的扫描）
 export function isCheckmated(board: (Piece | null)[][], side: Side): boolean {
+  if (!isInCheck(board, side)) return false;
+  
   // 检查是否有任何合法走法
   for (let r = 0; r < 10; r++) {
     for (let c = 0; c < 9; c++) {

@@ -194,6 +194,26 @@ body {
 .room-row:hover { background: rgba(200,85,61,0.05); }
 .room-row:last-child { border-bottom: none; }
 .room-col-id { color: var(--gold); font-weight: 600; font-family: monospace; }
+.room-col-id .room-name {
+  display: block;
+  color: var(--text);
+  font-weight: 600;
+  font-family: var(--font-serif);
+  font-size: 13px;
+  line-height: 1.3;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.room-col-id .room-id-small {
+  display: block;
+  color: var(--text-dim);
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: 400;
+  margin-top: 2px;
+}
 .room-col-time { color: var(--text-muted); }
 .room-col-red, .room-col-black { color: var(--text); }
 .room-col-red small, .room-col-black small { color: var(--text-dim); margin-left: 4px; }

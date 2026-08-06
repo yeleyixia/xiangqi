@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { TimeControl } from '../types';
 import { useAuthStore, useLobbyStore, useToastStore } from '../store';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 
 interface CreateRoomModalProps {
   onClose: () => void;
@@ -19,11 +19,12 @@ const TIME_OPTIONS: { value: TimeControl; label: string; desc: string }[] = [
 ];
 
 export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ onClose }) => {
-  const [name, setName] = useState('');
+  const { user, isGuest } = useAuthStore();
+  const defaultName = user ? `${user.username}的房间` : '棋友的房间';
+  const [name, setName] = useState(defaultName);
   const [timeControl, setTimeControl] = useState<TimeControl>('10+0');
   const [loading, setLoading] = useState(false);
   
-  const { user, isGuest } = useAuthStore();
   const { createRoom } = useLobbyStore();
   const { addToast } = useToastStore();
   const navigate = useNavigate();
@@ -34,13 +35,11 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ onClose }) => 
       return;
     }
     
-    if (!name.trim()) {
-      addToast('请输入房间名称', 'error');
-      return;
-    }
+    // 房间名称留空时自动生成默认名称
+    const roomName = name.trim() || defaultName;
     
     setLoading(true);
-    const room = await createRoom(name.trim(), timeControl);
+    const room = await createRoom(roomName, timeControl);
     setLoading(false);
     
     if (room) {

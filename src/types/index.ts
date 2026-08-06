@@ -87,7 +87,6 @@ export interface GameState {
   mySide: Side | null;
   selectedPiece: Position | null;
   validMoves: Position[];
-  isMyTurn: boolean;
   settings: GameSettings;
   chatMessages: ChatMessage[];
 }
