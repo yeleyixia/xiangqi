@@ -102,7 +102,11 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
   // 棋盘数据变化时重绘
   useEffect(() => {
     scheduleDraw();
-  }, [board, selectedPiece, validMoves, lastMove, showCoordinates]);
+  }, [board, selectedPiece, validMoves, lastMove, showCoordinates, mySide]);
+
+  // 执黑方时整盘旋转 180°，让己方棋子显示在下方（我方视角）
+  // 棋盘网格本身中心对称，旋转后与 BASE_CS 坐标系依然精确对齐
+  const flipped = mySide === 'black';
 
   // 监听父容器(board-container)尺寸，在可用宽高内按棋盘比例缩放，保证竖屏/横屏都适配
   useEffect(() => {
@@ -171,6 +175,15 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
 
     // 清空画布（使用含内边距的总高）
     ctx.clearRect(0, 0, BASE_W, CANVAS_H);
+
+    // 执黑方视角：绕棋盘中心旋转 180°（棋子、棋盘图、标记、坐标一并翻转）
+    if (flipped) {
+      const cx = BASE_W / 2;
+      const cy = BOARD_PAD_Y + BASE_H / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate(Math.PI);
+      ctx.translate(-cx, -cy);
+    }
 
     // 绘制棋盘背景图（向下偏移 BOARD_PAD_Y，留出顶部呼吸空间）
     if (boardLoadedRef.current && boardImgRef.current) {
@@ -276,22 +289,29 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
       );
     }
 
-    // 坐标标注
+    // 坐标标注（在屏幕坐标系下绘制，翻转时保持文字正向，仅镜像编号）
     if (showCoordinates) {
+      // 撤销翻转变换，坐标文字始终正向可读
+      ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+
       ctx.fillStyle = '#5a3010';
       ctx.font = 'bold 12px sans-serif';
       ctx.textAlign = 'center';
       ctx.shadowColor = 'rgba(240, 216, 138, 0.8)';
       ctx.shadowBlur = 4;
 
+      // 坐标标注在屏幕坐标系下绘制：翻转时文字保持正向，编号无需变动（列 9→1、行 1→10，均为观看者视角）
+      const colLabel = (i: number) => String(9 - i);
+      const rowLabel = (i: number) => String(i + 1);
+
       for (let i = 0; i < 9; i++) {
-        ctx.fillText(String(9 - i), BASE_OX + i * BASE_CS, OY - 12);
-        ctx.fillText(String(9 - i), BASE_OX + i * BASE_CS, OY + 9 * BASE_CS + 12);
+        ctx.fillText(colLabel(i), BASE_OX + i * BASE_CS, OY - 12);
+        ctx.fillText(colLabel(i), BASE_OX + i * BASE_CS, OY + 9 * BASE_CS + 12);
       }
 
       for (let i = 0; i < 10; i++) {
-        ctx.fillText(String(i + 1), BASE_OX - 12, OY + i * BASE_CS);
-        ctx.fillText(String(i + 1), BASE_OX + 8 * BASE_CS + 12, OY + i * BASE_CS);
+        ctx.fillText(rowLabel(i), BASE_OX - 12, OY + i * BASE_CS);
+        ctx.fillText(rowLabel(i), BASE_OX + 8 * BASE_CS + 12, OY + i * BASE_CS);
       }
 
       ctx.shadowBlur = 0;
@@ -306,8 +326,14 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     const mx = (e.clientX - rect.left) / scaleRef.current;
     const my = (e.clientY - rect.top) / scaleRef.current;
 
-    const col = Math.round((mx - BASE_OX) / BASE_CS);
-    const row = Math.round((my - OY) / BASE_CS);
+    let col = Math.round((mx - BASE_OX) / BASE_CS);
+    let row = Math.round((my - OY) / BASE_CS);
+
+    // 执黑方时屏幕坐标与棋盘逻辑坐标相反，需映射回逻辑坐标
+    if (flipped) {
+      row = 9 - row;
+      col = 8 - col;
+    }
 
     if (col >= 0 && col <= 8 && row >= 0 && row <= 9) {
       onSquareClick(row, col);
