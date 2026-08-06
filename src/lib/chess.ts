@@ -16,6 +16,23 @@ export function cloneBoard(board: (Piece | null)[][]): (Piece | null)[][] {
   return board.map(row => [...row]);
 }
 
+// 执黑视角的坐标翻转映射：逻辑坐标 (r,c) ↔ 屏幕坐标 (9-r, 8-c)
+// 棋盘绕中心旋转 180° 后，行/列均反向。该函数为纯函数，可单测复用。
+export function flipPosition(pos: Position): Position {
+  return { row: 9 - pos.row, col: 8 - pos.col };
+}
+
+// 屏幕坐标系下的行标：执红视角屏幕顶→底为 1→10；
+// 执黑翻转后棋盘旋转 180°，屏幕顶对应红方底线 10、屏幕底对应黑方底线 1。
+export function screenRowLabel(screenRow: number, flipped: boolean): string {
+  return String(flipped ? 10 - screenRow : screenRow + 1);
+}
+
+// 屏幕坐标系下的列标：屏幕左→右固定为 9→1（翻转后中心对称，编号方向依然成立）。
+export function screenColLabel(screenCol: number): string {
+  return String(9 - screenCol);
+}
+
 // 初始化棋盘
 export function initBoard(): (Piece | null)[][] {
   const board: (Piece | null)[][] = Array.from({ length: 10 }, () => Array(9).fill(null));

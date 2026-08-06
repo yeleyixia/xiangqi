@@ -1,12 +1,12 @@
 import React, { useRef, useEffect } from 'react';
 import { Piece, Position, Side } from '../types';
 import { loadPiecesImage, drawPieceSprite } from '../lib/pieces';
+import { screenRowLabel, screenColLabel, flipPosition } from '../lib/chess';
 
 interface ChessBoardProps {
   board: (Piece | null)[][];
   selectedPiece: Position | null;
   validMoves: Position[];
-  currentTurn: Side;
   mySide: Side | null;
   onSquareClick: (row: number, col: number) => void;
   lastMove?: { from: Position; to: Position } | null;
@@ -30,7 +30,6 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
   board,
   selectedPiece,
   validMoves,
-  currentTurn,
   mySide,
   onSquareClick,
   lastMove,
@@ -45,8 +44,6 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
   const scaleRef = useRef(1);
   const dprRef = useRef(1);
   const rafRef = useRef<number | null>(null);
-  // 用 ref 保存最新翻转状态，供异步图片回调读取，避免闭包捕获旧值
-  const flippedRef = useRef(false);
   // 用 ref 保存最新绘制函数，避免图片 onload 等异步回调捕获陈旧闭包
   const drawRef = useRef<((ctx: CanvasRenderingContext2D) => void) | null>(null);
 
@@ -104,6 +101,12 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     };
   }, []);
 
+  // 实时同步最新 mySide 到 ref，避免 resize / 图片加载等一次性闭包捕获过期的翻转状态
+  // 渲染期直接赋值：任何异步回调（img.onload / rAF / resize）读取到的都是最新值，
+  // 时序上严格优于放进 useEffect（提交后异步执行，存在旧值窗口）
+  const mySideRef = useRef<Side | null>(mySide);
+  mySideRef.current = mySide; // 渲染期同步，勿放进 useEffect
+
   // 棋盘数据变化时重绘
   useEffect(() => {
     scheduleDraw();
@@ -111,8 +114,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
 
   // 执黑方时整盘旋转 180°，让己方棋子显示在下方（我方视角）
   // 棋盘网格本身中心对称，旋转后与 BASE_CS 坐标系依然精确对齐
-  const flipped = mySide === 'black';
-  flippedRef.current = flipped; // 同步到 ref，供异步图片回调读取最新翻转状态
+  // 注意：绘制/点击均从 mySideRef 读取实时视角，避免一次性闭包捕获过期状态
 
   // 监听父容器(board-container)尺寸，在可用宽高内按棋盘比例缩放，保证竖屏/横屏都适配
   useEffect(() => {
@@ -175,8 +177,6 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
 
     const scale = scaleRef.current;
     const dpr = dprRef.current;
-    // 从 ref 读取最新翻转状态，避免异步闭包（图片 onload）用旧值覆盖
-    const flippedNow = flippedRef.current;
 
     // 设置变换：坐标系以 BASE 单位为准，但按显示缩放 + DPR 输出到像素
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
@@ -185,7 +185,9 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     ctx.clearRect(0, 0, BASE_W, CANVAS_H);
 
     // 执黑方视角：绕棋盘中心旋转 180°（棋子、棋盘图、标记、坐标一并翻转）
-    if (flippedNow) {
+    // 从 ref 读取最新视角，避免 resize/图片加载等一次性闭包用过期状态重绘
+    const isFlipped = mySideRef.current === 'black';
+    if (isFlipped) {
       const cx = BASE_W / 2;
       const cy = BOARD_PAD_Y + BASE_H / 2;
       ctx.translate(cx, cy);
@@ -297,7 +299,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
       );
     }
 
-    // 坐标标注（在屏幕坐标系下绘制，翻转时保持文字正向，仅镜像编号）
+    // 坐标标注（在屏幕坐标系下绘制，翻转时保持文字正向，编号无需变动）
     if (showCoordinates) {
       // 撤销翻转变换，坐标文字始终正向可读
       ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
@@ -308,9 +310,13 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
       ctx.shadowColor = 'rgba(240, 216, 138, 0.8)';
       ctx.shadowBlur = 4;
 
-      // 坐标标注在屏幕坐标系下绘制：翻转时文字保持正向，编号无需变动（列 9→1、行 1→10，均为观看者视角）
-      const colLabel = (i: number) => String(9 - i);
-      const rowLabel = (i: number) => String(i + 1);
+      // 坐标标注在屏幕坐标系下绘制：翻转时文字保持正向。
+      // 列标固定 9→1（屏幕左→右）；行标需随视角翻转：
+      // 执红屏幕顶→底为 1→10；执黑旋转 180° 后屏幕顶对应红方底线 10、屏幕底对应黑方底线 1。
+      // 使用纯函数保证与规则引擎/点击映射共用同一套翻转语义，可单测。
+      const isFlipped = mySideRef.current === 'black';
+      const colLabel = (i: number) => screenColLabel(i);
+      const rowLabel = (i: number) => screenRowLabel(i, isFlipped);
 
       for (let i = 0; i < 9; i++) {
         ctx.fillText(colLabel(i), BASE_OX + i * BASE_CS, OY - 12);
@@ -342,11 +348,11 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     let col = Math.round((mx - BASE_OX) / BASE_CS);
     let row = Math.round((my - OY) / BASE_CS);
 
-    // 执黑方时屏幕坐标与棋盘逻辑坐标相反，需映射回逻辑坐标
-    // 从 ref 读取最新翻转状态，避免陈旧闭包
-    if (flippedRef.current) {
-      row = 9 - row;
-      col = 8 - col;
+    // 执黑方时屏幕坐标与棋盘逻辑坐标相反，需映射回逻辑坐标（与绘制共用同一翻转语义）
+    if (mySideRef.current === 'black') {
+      const logical = flipPosition({ row, col });
+      row = logical.row;
+      col = logical.col;
     }
 
     if (col >= 0 && col <= 8 && row >= 0 && row <= 9) {

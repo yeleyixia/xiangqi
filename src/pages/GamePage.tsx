@@ -359,6 +359,9 @@ export const GamePage: React.FC = () => {
   const lastMove = moveHistory.length > 0 
     ? { from: moveHistory[moveHistory.length - 1].from, to: moveHistory[moveHistory.length - 1].to }
     : null;
+
+  // 己方视角：执黑时棋盘 180° 翻转（黑子在下），顶/底玩家栏随视角联动，保证信息与棋子方向一致
+  const viewFlipped = mySide === 'black';
   
   if (loading) {
     return (
@@ -394,19 +397,21 @@ export const GamePage: React.FC = () => {
       <main className={`game-main${settings.showMoveLog ? ' has-move-log' : ''}`}>
         <div className="game-layout">
           <div className="game-board-area">
-            {/* 黑方信息 */}
+            {/* 棋盘上方玩家栏（执黑视角为红方/对手，否则为黑方/对手） */}
             <div className="player-bar top-bar">
               <div className="player-info">
-                <span className="player-avatar black-avatar">將</span>
+                <span className={`player-avatar ${viewFlipped ? 'red-avatar' : 'black-avatar'}`}>{viewFlipped ? '帥' : '將'}</span>
                 <div className="player-detail">
-                  <span className="player-name">{mySide === 'black' ? (user?.username || '游客') : '对手'}</span>
+                  <span className="player-name">对手</span>
                   <span className="player-rating-text">
-                    {isInCheck(board, 'black') && currentTurn === 'black' ? '被将军！' : '黑方'}
+                    {viewFlipped
+                      ? (isInCheck(board, 'red') && currentTurn === 'red' ? '被将军！' : '红方')
+                      : (isInCheck(board, 'black') && currentTurn === 'black' ? '被将军！' : '黑方')}
                   </span>
                 </div>
               </div>
-              <div className={`timer ${currentTurn === 'black' ? 'timer-active' : ''} ${blackTime < 30 ? 'timer-danger' : ''}`}>
-                {formatTime(blackTime)}
+              <div className={`timer ${currentTurn === (viewFlipped ? 'red' : 'black') ? 'timer-active' : ''} ${(viewFlipped ? redTime : blackTime) < 30 ? 'timer-danger' : ''}`}>
+                {formatTime(viewFlipped ? redTime : blackTime)}
               </div>
             </div>
             
@@ -416,7 +421,6 @@ export const GamePage: React.FC = () => {
                 board={board}
                 selectedPiece={selectedPiece}
                 validMoves={settings.showHints ? validMoves : []}
-                currentTurn={currentTurn}
                 mySide={mySide}
                 onSquareClick={handleSquareClick}
                 lastMove={lastMove}
@@ -465,16 +469,18 @@ export const GamePage: React.FC = () => {
               </div>
               <div className="player-bar bottom-bar">
                 <div className="player-info">
-                  <span className="player-avatar red-avatar">帥</span>
+                  <span className={`player-avatar ${viewFlipped ? 'black-avatar' : 'red-avatar'}`}>{viewFlipped ? '將' : '帥'}</span>
                   <div className="player-detail">
-                    <span className="player-name">{mySide === 'red' ? (user?.username || '游客') : '对手'}</span>
+                    <span className="player-name">{viewFlipped ? (user?.username || '游客') : (mySide === 'red' ? (user?.username || '游客') : '对手')}</span>
                     <span className="player-rating-text">
-                      {isInCheck(board, 'red') && currentTurn === 'red' ? '被将军！' : '红方'}
+                      {viewFlipped
+                        ? (isInCheck(board, 'black') && currentTurn === 'black' ? '被将军！' : '黑方')
+                        : (isInCheck(board, 'red') && currentTurn === 'red' ? '被将军！' : '红方')}
                     </span>
                   </div>
                 </div>
-                <div className={`timer ${currentTurn === 'red' ? 'timer-active' : ''} ${redTime < 30 ? 'timer-danger' : ''}`}>
-                  {formatTime(redTime)}
+                <div className={`timer ${currentTurn === (viewFlipped ? 'black' : 'red') ? 'timer-active' : ''} ${(viewFlipped ? blackTime : redTime) < 30 ? 'timer-danger' : ''}`}>
+                  {formatTime(viewFlipped ? blackTime : redTime)}
                 </div>
               </div>
             </div>
