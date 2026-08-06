@@ -39,6 +39,9 @@ export interface DrawPieceOptions {
   shadowBlur?: number;
   shadowOffsetX?: number;
   shadowOffsetY?: number;
+  // 棋盘整盘 180° 旋转（执黑视角）时置为 true：在棋子自身中心再旋转 180°
+  // 抵消整盘旋转，保证棋子上的文字始终正立可读（位置不受影响）。
+  upright?: boolean;
 }
 
 export function drawPieceSprite(
@@ -64,17 +67,35 @@ export function drawPieceSprite(
   ctx.shadowOffsetX = options?.shadowOffsetX ?? 0;
   ctx.shadowOffsetY = options?.shadowOffsetY ?? Math.max(1, size * 0.05);
 
-  ctx.drawImage(
-    image,
-    rect.x,
-    rect.y,
-    rect.w,
-    rect.h,
-    x - dw / 2,
-    y - dh / 2,
-    dw,
-    dh
-  );
+  if (options?.upright) {
+    // 执黑视角：整盘已绕棋盘中心旋转 180°，这里在棋子自身中心再旋转 180°，
+    // 净效果为不旋转，棋子文字保持正立可读；位置由整盘旋转负责，不受影响。
+    ctx.translate(x, y);
+    ctx.rotate(Math.PI);
+    ctx.drawImage(
+      image,
+      rect.x,
+      rect.y,
+      rect.w,
+      rect.h,
+      -dw / 2,
+      -dh / 2,
+      dw,
+      dh
+    );
+  } else {
+    ctx.drawImage(
+      image,
+      rect.x,
+      rect.y,
+      rect.w,
+      rect.h,
+      x - dw / 2,
+      y - dh / 2,
+      dw,
+      dh
+    );
+  }
 
   ctx.restore();
 }
