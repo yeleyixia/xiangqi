@@ -4,8 +4,8 @@ export const PIECE_SPRITE_URL = '/pieces.webp';
 
 // 木质棋子素材在精灵图中的源矩形（基于 红上黑下透明.png）
 // 布局：7 列 x 2 行；第 0 行黑方 R,N,B,A,K,C,P；第 1 行红方 R,N,B,A,K,C,P
-// 方向约定：素材按「红方视角」绘制——红子文字正立、黑子文字随黑方在棋盘上方而倒置。
-// 执黑视角时棋盘整盘旋转 180°，黑子自然正立、红子自然倒置，无需额外旋转棋子。
+// 方向约定：素材中所有棋子文字均正立（红黑统一）。
+// 执黑视角时棋盘整盘旋转 180°，棋子通过 upright 选项反向旋转 180° 保持文字正立。
 export const PIECE_RECTS: Record<string, { x: number; y: number; w: number; h: number }> = {
   'black-R': { x: 6, y: 8, w: 213, h: 238 },   // 車（倒置）
   'black-N': { x: 231, y: 9, w: 211, h: 237 },  // 馬（倒置）
@@ -41,6 +41,7 @@ export interface DrawPieceOptions {
   shadowBlur?: number;
   shadowOffsetX?: number;
   shadowOffsetY?: number;
+  upright?: boolean;
 }
 
 export function drawPieceSprite(
@@ -66,17 +67,22 @@ export function drawPieceSprite(
   ctx.shadowOffsetX = options?.shadowOffsetX ?? 0;
   ctx.shadowOffsetY = options?.shadowOffsetY ?? Math.max(1, size * 0.05);
 
-  ctx.drawImage(
-    image,
-    rect.x,
-    rect.y,
-    rect.w,
-    rect.h,
-    x - dw / 2,
-    y - dh / 2,
-    dw,
-    dh
-  );
+  // 棋盘旋转 180° 时，棋子文字会倒立；upright=true 绕棋子中心反向旋转 180° 保持正立
+  if (options?.upright) {
+    ctx.translate(x, y);
+    ctx.rotate(Math.PI);
+    ctx.drawImage(
+      image,
+      rect.x, rect.y, rect.w, rect.h,
+      -dw / 2, -dh / 2, dw, dh
+    );
+  } else {
+    ctx.drawImage(
+      image,
+      rect.x, rect.y, rect.w, rect.h,
+      x - dw / 2, y - dh / 2, dw, dh
+    );
+  }
 
   ctx.restore();
 }
