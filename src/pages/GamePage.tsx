@@ -24,8 +24,9 @@ export const GamePage: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false);
-  const [fxEffect, setFxEffect] = useState<{ type: 'capture' | 'check' | 'checkmate'; show: boolean } | null>(null);
+  const [fxEffect, setFxEffect] = useState<{ type: 'opening' | 'centerCannon' | 'capture' | 'check' | 'checkmate'; show: boolean } | null>(null);
   const fxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMoveCountRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [redTime, setRedTime] = useState(600);
@@ -43,13 +44,15 @@ export const GamePage: React.FC = () => {
     };
   }, []);
 
-  // 触发棋盘中央特效图（吃子/将军/绝杀）
-  const FX_DURATION: Record<'capture' | 'check' | 'checkmate', number> = {
+  // 触发棋盘中央特效图（开局/当头炮/吃子/将军/绝杀）
+  const FX_DURATION: Record<string, number> = {
+    opening: 3000,
+    centerCannon: 3000,
     capture: 3000,
     check: 3800,
     checkmate: 3800
   };
-  const triggerFx = (type: 'capture' | 'check' | 'checkmate') => {
+  const triggerFx = (type: 'opening' | 'centerCannon' | 'capture' | 'check' | 'checkmate') => {
     if (fxTimerRef.current) {
       clearTimeout(fxTimerRef.current);
     }
@@ -150,6 +153,52 @@ export const GamePage: React.FC = () => {
   const gameStatus = room?.status || 'waiting';
   const winner = room?.winner || null;
   
+  // 开局特效：对局开始时触发（status 变为 playing 且尚无走子）
+  useEffect(() => {
+    if (gameStatus === 'playing' && moveHistory.length === 0) {
+      triggerFx('opening');
+    }
+  }, [gameStatus]);
+
+  // 走子特效检测：监听走子历史变化，双方都能看到效果
+  useEffect(() => {
+    const moveCount = moveHistory.length;
+    if (moveCount <= lastMoveCountRef.current) {
+      lastMoveCountRef.current = moveCount;
+      return;
+    }
+
+    const lastMove = moveHistory[moveCount - 1];
+    if (!lastMove) {
+      lastMoveCountRef.current = moveCount;
+      return;
+    }
+
+    lastMoveCountRef.current = moveCount;
+
+    // 当头炮特效：炮移动到中路（col 4）
+    if (lastMove.piece.type === 'C' && lastMove.to.col === 4) {
+      triggerFx('centerCannon');
+      return;
+    }
+
+    // 吃子/将军/绝杀特效
+    const captured = lastMove.captured;
+    const nextTurn: Side = lastMove.piece.side === 'red' ? 'black' : 'red';
+    const inCheck = isInCheck(board, nextTurn);
+    const isMate = inCheck && isCheckmated(board, nextTurn);
+
+    if (isMate) {
+      triggerFx('checkmate');
+      addToast(`${lastMove.piece.side === 'red' ? '红方' : '黑方'}获胜！将杀！`, 'success');
+    } else if (inCheck) {
+      triggerFx('check');
+      addToast('将军！', 'info');
+    } else if (captured) {
+      triggerFx('capture');
+    }
+  }, [moveHistory]);
+
   // 计时器：每秒递减，超时回写服务器
   useEffect(() => {
     if (gameStatus !== 'playing') return;
@@ -236,26 +285,7 @@ export const GamePage: React.FC = () => {
           return;
         }
         
-        // 实时订阅会将服务器棋盘同步回本地；store 已同步本地状态，这里只做特效反馈
-        const captured = board[to.row]?.[to.col] ?? null;
-        const nextTurn = currentTurn === 'red' ? 'black' : 'red';
-        
-        // 用 store 最新状态判断将军/将死
-        const latest = useGameStore.getState().room;
-        const latestBoard = latest?.board || board;
-        const inCheck = isInCheck(latestBoard, nextTurn);
-        const isMate = inCheck && isCheckmated(latestBoard, nextTurn);
-        
-        // 吃子/将军/绝杀特效：将军/绝杀优先，同一手只显示一种
-        if (isMate) {
-          triggerFx('checkmate');
-          addToast(`${currentTurn === 'red' ? '红方' : '黑方'}获胜！将杀！`, 'success');
-        } else if (inCheck) {
-          triggerFx('check');
-          addToast('将军！', 'info');
-        } else if (captured) {
-          triggerFx('capture');
-        }
+        // 特效由 useEffect 监听 moveHistory 变化统一触发，双方都能看到
       } else if (piece) {
         // 选择新棋子
         if (piece.side === currentTurn && piece.side === mySide) {
@@ -409,14 +439,22 @@ export const GamePage: React.FC = () => {
                 <img
                   className="fx-effect-img"
                   src={
-                    fxEffect.type === 'capture'
+                    fxEffect.type === 'opening'
+                      ? '/kaiju.webp'
+                      : fxEffect.type === 'centerCannon'
+                      ? '/dangtoupo.webp'
+                      : fxEffect.type === 'capture'
                       ? '/capture.webp'
                       : fxEffect.type === 'check'
                       ? '/check.webp'
                       : '/checkmate.webp'
                   }
                   alt={
-                    fxEffect.type === 'capture'
+                    fxEffect.type === 'opening'
+                      ? '开局'
+                      : fxEffect.type === 'centerCannon'
+                      ? '当头炮'
+                      : fxEffect.type === 'capture'
                       ? '吃'
                       : fxEffect.type === 'check'
                       ? '将军'
