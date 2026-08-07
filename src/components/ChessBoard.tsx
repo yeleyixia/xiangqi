@@ -1,12 +1,12 @@
 import React, { useRef, useEffect } from 'react';
 import { Piece, Position, Side } from '../types';
 import { loadPiecesImage, drawPieceSprite } from '../lib/pieces';
+import { screenRowLabel, screenColLabel, flipPosition } from '../lib/chess';
 
 interface ChessBoardProps {
   board: (Piece | null)[][];
   selectedPiece: Position | null;
   validMoves: Position[];
-  currentTurn: Side;
   mySide: Side | null;
   onSquareClick: (row: number, col: number) => void;
   lastMove?: { from: Position; to: Position } | null;
@@ -30,7 +30,6 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
   board,
   selectedPiece,
   validMoves,
-  currentTurn,
   mySide,
   onSquareClick,
   lastMove,
@@ -45,6 +44,8 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
   const scaleRef = useRef(1);
   const dprRef = useRef(1);
   const rafRef = useRef<number | null>(null);
+  // 用 ref 保存最新绘制函数，避免图片 onload 等异步回调捕获陈旧闭包
+  const drawRef = useRef<((ctx: CanvasRenderingContext2D) => void) | null>(null);
 
   // 统一绘制入口，防抖避免 ResizeObserver 频繁触发
   const scheduleDraw = () => {
@@ -54,7 +55,8 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-      drawBoard(ctx);
+      // 始终调用最新的绘制函数（drawRef 每次渲染都更新），避免陈旧闭包
+      drawRef.current?.(ctx);
     });
   };
 
@@ -99,10 +101,20 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     };
   }, []);
 
+  // 实时同步最新 mySide 到 ref，避免 resize / 图片加载等一次性闭包捕获过期的翻转状态
+  // 渲染期直接赋值：任何异步回调（img.onload / rAF / resize）读取到的都是最新值，
+  // 时序上严格优于放进 useEffect（提交后异步执行，存在旧值窗口）
+  const mySideRef = useRef<Side | null>(mySide);
+  mySideRef.current = mySide; // 渲染期同步，勿放进 useEffect
+
   // 棋盘数据变化时重绘
   useEffect(() => {
     scheduleDraw();
-  }, [board, selectedPiece, validMoves, lastMove, showCoordinates]);
+  }, [board, selectedPiece, validMoves, lastMove, showCoordinates, mySide]);
+
+  // 执黑方时整盘旋转 180°，让己方棋子显示在下方（我方视角）
+  // 棋盘网格本身中心对称，旋转后与 BASE_CS 坐标系依然精确对齐
+  // 注意：绘制/点击均从 mySideRef 读取实时视角，避免一次性闭包捕获过期状态
 
   // 监听父容器(board-container)尺寸，在可用宽高内按棋盘比例缩放，保证竖屏/横屏都适配
   useEffect(() => {
@@ -172,6 +184,17 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     // 清空画布（使用含内边距的总高）
     ctx.clearRect(0, 0, BASE_W, CANVAS_H);
 
+    // 执黑方视角：绕棋盘中心旋转 180°（棋子、棋盘图、标记、坐标一并翻转）
+    // 从 ref 读取最新视角，避免 resize/图片加载等一次性闭包用过期状态重绘
+    const isFlipped = mySideRef.current === 'black';
+    if (isFlipped) {
+      const cx = BASE_W / 2;
+      const cy = BOARD_PAD_Y + BASE_H / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate(Math.PI);
+      ctx.translate(-cx, -cy);
+    }
+
     // 绘制棋盘背景图（向下偏移 BOARD_PAD_Y，留出顶部呼吸空间）
     if (boardLoadedRef.current && boardImgRef.current) {
       ctx.drawImage(boardImgRef.current, 0, BOARD_PAD_Y, BASE_W, BASE_H);
@@ -198,6 +221,8 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     }
 
     // 绘制棋子（先画非选中棋子，选中棋子最后画以实现上浮立体效果）
+    // 棋子素材按红方视角绘制（黑子倒置）。执黑视角整盘旋转 180° 后，
+    // 黑子文字自然正立、红子文字自然倒置，符合真实对弈观感，无需额外旋转。
     if (piecesLoadedRef.current && piecesImgRef.current) {
       for (let r = 0; r < 10; r++) {
         for (let c = 0; c < 9; c++) {
@@ -276,27 +301,41 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
       );
     }
 
-    // 坐标标注
+    // 坐标标注（在屏幕坐标系下绘制，翻转时保持文字正向，编号无需变动）
     if (showCoordinates) {
+      // 撤销翻转变换，坐标文字始终正向可读
+      ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, 0);
+
       ctx.fillStyle = '#5a3010';
       ctx.font = 'bold 12px sans-serif';
       ctx.textAlign = 'center';
       ctx.shadowColor = 'rgba(240, 216, 138, 0.8)';
       ctx.shadowBlur = 4;
 
+      // 坐标标注在屏幕坐标系下绘制：翻转时文字保持正向。
+      // 列标固定 9→1（屏幕左→右）；行标需随视角翻转：
+      // 执红屏幕顶→底为 1→10；执黑旋转 180° 后屏幕顶对应红方底线 10、屏幕底对应黑方底线 1。
+      // 使用纯函数保证与规则引擎/点击映射共用同一套翻转语义，可单测。
+      const isFlipped = mySideRef.current === 'black';
+      const colLabel = (i: number) => screenColLabel(i);
+      const rowLabel = (i: number) => screenRowLabel(i, isFlipped);
+
       for (let i = 0; i < 9; i++) {
-        ctx.fillText(String(9 - i), BASE_OX + i * BASE_CS, OY - 12);
-        ctx.fillText(String(9 - i), BASE_OX + i * BASE_CS, OY + 9 * BASE_CS + 12);
+        ctx.fillText(colLabel(i), BASE_OX + i * BASE_CS, OY - 12);
+        ctx.fillText(colLabel(i), BASE_OX + i * BASE_CS, OY + 9 * BASE_CS + 12);
       }
 
       for (let i = 0; i < 10; i++) {
-        ctx.fillText(String(i + 1), BASE_OX - 12, OY + i * BASE_CS);
-        ctx.fillText(String(i + 1), BASE_OX + 8 * BASE_CS + 12, OY + i * BASE_CS);
+        ctx.fillText(rowLabel(i), BASE_OX - 12, OY + i * BASE_CS);
+        ctx.fillText(rowLabel(i), BASE_OX + 8 * BASE_CS + 12, OY + i * BASE_CS);
       }
 
       ctx.shadowBlur = 0;
     }
   };
+
+  // 每次渲染后把最新绘制函数同步到 ref，供 scheduleDraw 的异步回调读取
+  drawRef.current = drawBoard;
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -306,8 +345,17 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     const mx = (e.clientX - rect.left) / scaleRef.current;
     const my = (e.clientY - rect.top) / scaleRef.current;
 
-    const col = Math.round((mx - BASE_OX) / BASE_CS);
-    const row = Math.round((my - OY) / BASE_CS);
+    // 棋子绘制在网格交点上，点击应取最近的交点
+    // Math.round 取最近整数即最近交点，不能改为 floor（会把交点右半区误判到左格）
+    let col = Math.round((mx - BASE_OX) / BASE_CS);
+    let row = Math.round((my - OY) / BASE_CS);
+
+    // 执黑方时屏幕坐标与棋盘逻辑坐标相反，需映射回逻辑坐标（与绘制共用同一翻转语义）
+    if (mySideRef.current === 'black') {
+      const logical = flipPosition({ row, col });
+      row = logical.row;
+      col = logical.col;
+    }
 
     if (col >= 0 && col <= 8 && row >= 0 && row <= 9) {
       onSquareClick(row, col);

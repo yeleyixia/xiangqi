@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router';
 import { ChessBoard } from '../components/ChessBoard';
-import { useAuthStore, useGameStore, useLobbyStore, useToastStore } from '../store';
+import { useAuthStore, useGameStore, useToastStore } from '../store';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { initBoard, getValidMoves, posToNotation, parseTimeControl, isInCheck, isCheckmated } from '../lib/chess';
-import type { Position, Side, ChatMessage, Move, Piece } from '../types';
+import { getValidMoves, posToNotation, parseTimeControl, isInCheck, isCheckmated } from '../lib/chess';
+import type { Side } from '../types';
 
 export const GamePage: React.FC = () => {
   const { roomId } = useParams<{ roomId: string }>();
@@ -15,8 +15,8 @@ export const GamePage: React.FC = () => {
     room, setRoom, mySide, setMySide, 
     selectedPiece, selectPiece, validMoves, setValidMoves,
     settings, updateSettings,
-    chatMessages, addChatMessage, setChatMessages,
-    subscribeToRoom
+    chatMessages, roomDeleted,
+    subscribeToRoom, makeMove: storeMakeMove, joinRoom, startLocalGame, undoLocalMove, resign, timeout, sendChat
   } = useGameStore();
   const { addToast } = useToastStore();
   
@@ -30,17 +30,9 @@ export const GamePage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [redTime, setRedTime] = useState(600);
   const [blackTime, setBlackTime] = useState(600);
-  const [localBoard, setLocalBoard] = useState<(Piece | null)[][]>(initBoard());
-  const [moveHistory, setMoveHistory] = useState<Move[]>([]);
-  const [currentTurn, setCurrentTurn] = useState<Side>('red');
-  const [gameStatus, setGameStatus] = useState<'waiting' | 'playing' | 'finished'>('waiting');
-  const [winner, setWinner] = useState<Side | null>(null);
-  const [playerNames, setPlayerNames] = useState<{ red: string; black: string }>({ red: '', black: '' });
   
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const justMovedRef = useRef(false);        // 跳过我方走子回显
-  const initialLoadDoneRef = useRef(false);   // 首屏加载完成后才监听服务端同步
 
   // 清理特效定时器
   useEffect(() => {
@@ -52,7 +44,6 @@ export const GamePage: React.FC = () => {
   }, []);
 
   // 触发棋盘中央特效图（吃子/将军/绝杀）
-  // 吃子：3 秒；将军/绝杀：3.8 秒；同一手只显示一种特效（将军/绝杀优先）
   const FX_DURATION: Record<'capture' | 'check' | 'checkmate', number> = {
     capture: 3000,
     check: 3800,
@@ -71,24 +62,15 @@ export const GamePage: React.FC = () => {
   
   // 加载房间数据
   useEffect(() => {
-    if (!roomId) {
-      // 没有房间ID，创建本地对弈
-      setLocalBoard(initBoard());
-      setMoveHistory([]);
-      setCurrentTurn('red');
-      setGameStatus('playing');
+    // 没有房间ID或 Supabase 未配置：创建本地对弈
+    if (!roomId || !isSupabaseConfigured()) {
+      startLocalGame();
       setLoading(false);
-      return;
-    }
-    
-    if (!isSupabaseConfigured()) {
-      // Supabase 未配置，使用本地模式
-      setLocalBoard(initBoard());
-      setMoveHistory([]);
-      setCurrentTurn('red');
-      setGameStatus('playing');
-      setLoading(false);
-      addToast('本地对弈模式', 'info');
+      if (roomId === undefined && isSupabaseConfigured()) {
+        addToast('本地对弈模式', 'info');
+      } else if (!isSupabaseConfigured()) {
+        addToast('本地对弈模式', 'info');
+      }
       return;
     }
     
@@ -105,6 +87,20 @@ export const GamePage: React.FC = () => {
     };
   }, [roomId]);
   
+  // 房间状态变化时同步计时显示与玩家方
+  useEffect(() => {
+    if (!room) return;
+    
+    setRedTime(room.red_time ?? 0);
+    setBlackTime(room.black_time ?? 0);
+    
+    // 重新确认玩家方（避免加入后仍无我方阵营）
+    if (user) {
+      if (room.red_player === user.id) setMySide('red');
+      else if (room.black_player === user.id) setMySide('black');
+    }
+  }, [room, user]);
+  
   // 加载房间
   const loadRoom = async () => {
     if (!roomId) return;
@@ -119,38 +115,10 @@ export const GamePage: React.FC = () => {
     if (error || !data) {
       setError('房间不存在');
       setLoading(false);
-      setInitialLoadDoneRef.current = true;
       return;
     }
     
-    // 自动加入逻辑：房间等待中 + 有空位 + 我不是房主 → 自动加入
-    if (data.status === 'waiting' && user && isSupabaseConfigured()) {
-      const isRedPlayer = data.red_player === user.id;
-      const isBlackPlayer = data.black_player === user.id;
-      
-      if (!isRedPlayer && !isBlackPlayer) {
-        const joinResult = await useLobbyStore.getState().autoJoinRoom(roomId);
-        if (joinResult.success && joinResult.side) {
-          setMySide(joinResult.side);
-          // 刷新房间数据
-          const { data: updatedData } = await supabase
-            .from('rooms')
-            .select('*')
-            .eq('id', roomId)
-            .single();
-          if (updatedData) {
-            Object.assign(data, updatedData);
-          }
-        }
-      }
-    }
-    
     setRoom(data);
-    setLocalBoard(data.board);
-    setMoveHistory(data.move_history || []);
-    setCurrentTurn(data.current_turn);
-    setGameStatus(data.status);
-    setWinner(data.winner || null);
     
     // 设置时间
     const { minutes } = parseTimeControl(data.time_control);
@@ -163,19 +131,53 @@ export const GamePage: React.FC = () => {
       else if (data.black_player === user.id) setMySide('black');
     }
     
+    // 进入房间时自动加入空闲一方（只有存在空位且当前用户尚未加入时才加入）
+    if (user && data.status !== 'finished') {
+      const isRed = data.red_player === user.id;
+      const isBlack = data.black_player === user.id;
+      if (!isRed && !isBlack) {
+        if (!data.red_player) {
+          const ok = await joinRoom(roomId, 'red');
+          if (ok) setMySide('red');
+        } else if (!data.black_player) {
+          const ok = await joinRoom(roomId, 'black');
+          if (ok) setMySide('black');
+        }
+      }
+    }
+    
     setLoading(false);
-    initialLoadDoneRef.current = true;
   };
   
-  // 计时器
+  // 当前显示用的棋盘/回合/状态（以 store 为单一数据源）
+  const board = room?.board || [];
+  const moveHistory = room?.move_history || [];
+  const currentTurn: Side = room?.current_turn || 'red';
+  const gameStatus = room?.status || 'waiting';
+  const winner = room?.winner || null;
+  
+  // 计时器：每秒本地递减，联网对局回写服务器
   useEffect(() => {
     if (gameStatus !== 'playing') return;
     
     timerRef.current = setInterval(() => {
       if (currentTurn === 'red') {
-        setRedTime(t => Math.max(0, t - 1));
+        setRedTime(t => {
+          const next = Math.max(0, t - 1);
+          if (next === 0 && roomId && isSupabaseConfigured()) {
+            // 超时：同步判定到服务器
+            timeout('red');
+          }
+          return next;
+        });
       } else {
-        setBlackTime(t => Math.max(0, t - 1));
+        setBlackTime(t => {
+          const next = Math.max(0, t - 1);
+          if (next === 0 && roomId && isSupabaseConfigured()) {
+            timeout('black');
+          }
+          return next;
+        });
       }
     }, 1000);
     
@@ -186,122 +188,57 @@ export const GamePage: React.FC = () => {
     };
   }, [currentTurn, gameStatus]);
   
-  // 检查超时
+  // 检查超时（本地对弈）
   useEffect(() => {
+    if (!room || room.id !== 'local') return;
+    if (gameStatus !== 'playing') return;
+    
     if (redTime === 0) {
-      setGameStatus('finished');
-      setWinner('black');
+      timeout('red');
       addToast('红方超时，黑方获胜！', 'info');
     } else if (blackTime === 0) {
-      setGameStatus('finished');
-      setWinner('red');
+      timeout('black');
       addToast('黑方超时，红方获胜！', 'info');
     }
-  }, [redTime, blackTime]);
+  }, [redTime, blackTime, gameStatus]);
   
   // 滚动聊天到底部
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
   
-  // 获取玩家用户名
-  useEffect(() => {
-    if (!roomId || !isSupabaseConfigured()) return;
+  // 点击棋盘格子
+  const handleSquareClick = useCallback(async (row: number, col: number) => {
+    if (gameStatus === 'finished') return;
     
-    const fetchNames = async () => {
-      const { data: roomData } = await supabase
-        .from('rooms')
-        .select('red_player, black_player')
-        .eq('id', roomId)
-        .single();
-      
-      if (!roomData) return;
-      
-      const ids = [roomData.red_player, roomData.black_player].filter(Boolean) as string[];
-      if (ids.length === 0) return;
-      
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, username')
-        .in('id', ids);
-      
-      if (profiles) {
-        const names = { red: '', black: '' };
-        profiles.forEach(p => {
-          if (p.id === roomData.red_player) names.red = p.username;
-          if (p.id === roomData.black_player) names.black = p.username;
-        });
-        setPlayerNames(names);
-      }
-    };
-    
-    fetchNames();
-  }, [roomId, gameStatus]);
-  
-  // 监听服务端房间变更 → 同步对手走子
-  useEffect(() => {
-    if (!roomId || !initialLoadDoneRef.current) return;
-    if (!room) return; // room from store, updated by subscribeToRoom
-    
-    // 我方刚走的子，回显跳过
-    if (justMovedRef.current) {
-      justMovedRef.current = false;
+    // 尚未开始对局（等待对手加入）时不可走子
+    if (gameStatus === 'waiting') {
+      addToast('等待对手加入，对局开始后方可走子', 'info');
       return;
     }
     
-    // 同步棋盘状态
-    setLocalBoard(room.board);
-    setMoveHistory(room.move_history || []);
-    setCurrentTurn(room.current_turn);
-    setGameStatus(room.status);
-    setWinner(room.winner || null);
-    if (typeof room.red_time === 'number') setRedTime(room.red_time);
-    if (typeof room.black_time === 'number') setBlackTime(room.black_time);
+    const isLocal = !roomId || !isSupabaseConfigured() || room?.id === 'local';
     
-    // 对手走子后检查特效
-    const lastMv = room.move_history?.[room.move_history?.length - 1];
-    const oppTurn = room.current_turn;
-    if (lastMv) {
-      const board = room.board;
-      const inCheck = isInCheck(board, oppTurn);
-      const isMate = inCheck && isCheckmated(board, oppTurn);
-      if (isMate) {
-        triggerFx('checkmate');
-      } else if (inCheck) {
-        triggerFx('check');
-      } else if (lastMv.captured) {
-        triggerFx('capture');
-      }
+    // 联网对局：观战者不可走子
+    if (!isLocal && !mySide) {
+      addToast('你正在观战，无法走子', 'info');
+      return;
     }
     
-    // 房间结束或删除
-    if (room.status === 'finished') {
-      if (timerRef.current) clearInterval(timerRef.current);
+    // 联网对局：只能走自己的棋子（服务端也会校验）
+    if (!isLocal && mySide && currentTurn !== mySide) {
+      addToast('还没轮到你走棋', 'info');
+      return;
     }
-    if (!room && gameStatus !== 'waiting') {
-      addToast('房间已关闭', 'error');
-      navigate('/lobby');
-    }
-  }, [room]);
-  
-  // 房间被删除检测
-  useEffect(() => {
-    if (loading || !roomId || !isSupabaseConfigured()) return;
-    if (!room && initialLoadDoneRef.current) {
-      addToast('房间不存在或已被删除', 'error');
-      setTimeout(() => navigate('/lobby'), 1500);
-    }
-  }, [room, loading]);
-  
-  // 点击棋盘格子
-  const handleSquareClick = useCallback((row: number, col: number) => {
-    if (gameStatus === 'finished') return;
     
-    // 在线模式：轮到自己才能操作
-    const isOnline = !!(roomId && isSupabaseConfigured() && mySide);
-    if (isOnline && mySide !== currentTurn) return;
+    const piece = board[row]?.[col];
     
-    const piece = localBoard[row][col];
+    // 联网对局：未选中棋子时，只能选择己方棋子
+    // 注意：若已选中棋子，点击敌方棋子是"吃子"动作，不能被这里拦截
+    if (piece && !isLocal && mySide && piece.side !== mySide && !selectedPiece) {
+      addToast('只能移动自己的棋子', 'info');
+      return;
+    }
     
     // 如果已选中棋子
     if (selectedPiece) {
@@ -309,131 +246,106 @@ export const GamePage: React.FC = () => {
       const isValidMove = validMoves.some(m => m.row === row && m.col === col);
       
       if (isValidMove) {
-        // 执行走子
+        // 执行走子（统一走 store，联网落库 / 本地直接更新）
         const from = selectedPiece;
         const to = { row, col };
-        
-        // 更新本地棋盘
-        const newBoard = localBoard.map(r => [...r]);
-        const movingPiece = newBoard[from.row][from.col];
-        const captured = newBoard[to.row][to.col];
-        
-        newBoard[to.row][to.col] = movingPiece;
-        newBoard[from.row][from.col] = null;
-        
-        // 添加到历史
-        const move: Move = {
-          from,
-          to,
-          piece: movingPiece!,
-          captured,
-          timestamp: Date.now()
-        };
-        
-        setLocalBoard(newBoard);
-        setMoveHistory([...moveHistory, move]);
-        
-        // 检查将军和将死
-        const nextTurn = currentTurn === 'red' ? 'black' : 'red';
-        setCurrentTurn(nextTurn);
-
-        const inCheck = isInCheck(newBoard, nextTurn);
-        const hasCapture = captured !== null;
-        const isMate = inCheck && isCheckmated(newBoard, nextTurn);
-
-        // 吃子/将军/绝杀特效：将军/绝杀优先，同一手只显示一种
-        if (isMate) {
-          triggerFx('checkmate');
-          setGameStatus('finished');
-          setWinner(currentTurn);
-          addToast(`${currentTurn === 'red' ? '红方' : '黑方'}获胜！将杀！`, 'success');
-        } else if (inCheck) {
-          triggerFx('check');
-          addToast('将军！', 'info');
-        } else if (hasCapture) {
-          triggerFx('capture');
-        }
         
         selectPiece(null);
         setValidMoves([]);
         
-        // 在线模式：同步走子到服务器
-        if (isOnline) {
-          justMovedRef.current = true;
-          useGameStore.getState().makeMove(from, to).then(success => {
-            if (!success) {
-              console.warn('Move sync to server failed');
-            }
-          });
+        const ok = await storeMakeMove(from, to);
+        if (!ok) {
+          addToast('走子失败，请重试', 'error');
+          return;
         }
-      } else if (piece && piece.side === currentTurn) {
+        
+        // 实时订阅会将服务器棋盘同步回本地；store 已同步本地状态，这里只做特效反馈
+        const captured = board[to.row]?.[to.col] ?? null;
+        const nextTurn = currentTurn === 'red' ? 'black' : 'red';
+        
+        // 用 store 最新状态判断将军/将死
+        const latest = useGameStore.getState().room;
+        const latestBoard = latest?.board || board;
+        const inCheck = isInCheck(latestBoard, nextTurn);
+        const isMate = inCheck && isCheckmated(latestBoard, nextTurn);
+        
+        // 吃子/将军/绝杀特效：将军/绝杀优先，同一手只显示一种
+        if (isMate) {
+          triggerFx('checkmate');
+          addToast(`${currentTurn === 'red' ? '红方' : '黑方'}获胜！将杀！`, 'success');
+        } else if (inCheck) {
+          triggerFx('check');
+          addToast('将军！', 'info');
+        } else if (captured) {
+          triggerFx('capture');
+        }
+      } else if (piece) {
         // 选择新棋子
-        selectPiece({ row, col });
-        setValidMoves(getValidMoves(localBoard, row, col));
+        if (piece.side === currentTurn && (isLocal || piece.side === mySide)) {
+          selectPiece({ row, col });
+          setValidMoves(getValidMoves(board, row, col));
+        } else {
+          // 取消选择
+          selectPiece(null);
+          setValidMoves([]);
+        }
       } else {
         // 取消选择
         selectPiece(null);
         setValidMoves([]);
       }
     } else {
-      // 选择棋子：只能选自己方的棋子
-      if (piece && piece.side === currentTurn) {
+      // 选择棋子
+      if (piece && piece.side === currentTurn && (isLocal || piece.side === mySide)) {
         selectPiece({ row, col });
-        setValidMoves(getValidMoves(localBoard, row, col));
+        setValidMoves(getValidMoves(board, row, col));
       }
     }
-  }, [localBoard, selectedPiece, validMoves, currentTurn, gameStatus, moveHistory, mySide, roomId]);
+  }, [board, selectedPiece, validMoves, currentTurn, gameStatus, mySide, roomId, room?.id]);
   
   // 发送聊天消息
-  const handleSendChat = () => {
+  const handleSendChat = async () => {
     if (!chatInput.trim()) return;
-    
-    const msg: ChatMessage = {
-      id: Date.now().toString(),
-      room_id: roomId || 'local',
-      user_id: user?.id || 'guest',
-      username: user?.username || '游客',
-      content: chatInput.trim(),
-      created_at: new Date().toISOString()
-    };
-    
-    addChatMessage(msg);
+    await sendChat(chatInput.trim());
     setChatInput('');
   };
   
-  // 悔棋
+  // 悔棋（本地对弈直接撤销；联网对局走请求制，经聊天广播给对手）
   const handleUndo = () => {
-    if (moveHistory.length < 2) return;
-
-    const newHistory = [...moveHistory];
-    newHistory.pop(); // 移除最后一步
-    const lastMove = newHistory.pop(); // 移除倒数第二步
-
-    // 重建棋盘
-    const newBoard = initBoard();
-    for (const move of newHistory) {
-      newBoard[move.to.row][move.to.col] = move.piece;
-      newBoard[move.from.row][move.from.col] = null;
+    if (moveHistory.length < 1) return;
+    if (!roomId || !isSupabaseConfigured() || room?.id === 'local') {
+      undoLocalMove();
+      addToast('已悔棋', 'info');
+    } else {
+      addToast('悔棋请求已发送给对手', 'info');
+      useGameStore.getState().requestUndo();
     }
-
-    setLocalBoard(newBoard);
-    setMoveHistory(newHistory);
-    setCurrentTurn(prev => prev === 'red' ? 'black' : 'red');
-    addToast('已悔棋', 'info');
   };
   
   // 认输
-  const handleResign = () => {
+  const handleResign = async () => {
     if (!confirm('确定要认输吗？')) return;
-    
-    setGameStatus('finished');
-    setWinner(currentTurn === 'red' ? 'black' : 'red');
-    addToast(`${currentTurn === 'red' ? '红方' : '黑方'}认输`, 'info');
-    
-    // 在线模式：同步到服务器
-    if (roomId && isSupabaseConfigured()) {
-      useGameStore.getState().resign();
+    if (!mySide) {
+      addToast('观战者不能认输', 'info');
+      return;
     }
+    await resign();
+    if (room?.id === 'local') {
+      const winner = room.current_turn === 'red' ? 'black' : 'red';
+      addToast(`${winner === 'red' ? '红方' : '黑方'}认输`, 'info');
+    }
+  };
+  
+  // 求和
+  const handleDraw = () => {
+    addToast('求和请求已发送', 'info');
+    sendChat('请求和棋');
+  };
+  
+  // 再来一局（本地对弈）
+  const handleRestart = () => {
+    startLocalGame();
+    setMobileMenuOpen(false);
   };
   
   // 格式化时间
@@ -447,6 +359,9 @@ export const GamePage: React.FC = () => {
   const lastMove = moveHistory.length > 0 
     ? { from: moveHistory[moveHistory.length - 1].from, to: moveHistory[moveHistory.length - 1].to }
     : null;
+
+  // 己方视角：执黑时棋盘 180° 翻转（黑子在下），顶/底玩家栏随视角联动，保证信息与棋子方向一致
+  const viewFlipped = mySide === 'black';
   
   if (loading) {
     return (
@@ -475,6 +390,23 @@ export const GamePage: React.FC = () => {
     );
   }
   
+  // 房间因超时被自动清空：提示玩家并引导返回大厅
+  if (roomDeleted) {
+    return (
+      <>
+        <div className="bg-pattern"></div>
+        <div className="empty-state" style={{ minHeight: '100vh' }}>
+          <div className="empty-icon">⏳</div>
+          <div className="empty-title">房间已清空</div>
+          <div className="empty-desc">该对弈房间已超时被自动清空，数据已释放。</div>
+          <button className="btn btn-primary" onClick={() => navigate('/lobby')}>
+            返回大厅
+          </button>
+        </div>
+      </>
+    );
+  }
+  
   return (
     <>
       <div className="bg-pattern"></div>
@@ -482,29 +414,30 @@ export const GamePage: React.FC = () => {
       <main className={`game-main${settings.showMoveLog ? ' has-move-log' : ''}`}>
         <div className="game-layout">
           <div className="game-board-area">
-            {/* 黑方信息 */}
+            {/* 棋盘上方玩家栏（执黑视角为红方/对手，否则为黑方/对手） */}
             <div className="player-bar top-bar">
               <div className="player-info">
-                <span className="player-avatar black-avatar">將</span>
+                <span className={`player-avatar ${viewFlipped ? 'red-avatar' : 'black-avatar'}`}>{viewFlipped ? '帥' : '將'}</span>
                 <div className="player-detail">
-                  <span className="player-name">{mySide === 'black' ? (user?.username || '黑方') : (playerNames.black || '黑方（等待中）')}</span>
+                  <span className="player-name">对手</span>
                   <span className="player-rating-text">
-                    {isInCheck(localBoard, 'black') && currentTurn === 'black' ? '被将军！' : '黑方'}
+                    {viewFlipped
+                      ? (isInCheck(board, 'red') && currentTurn === 'red' ? '被将军！' : '红方')
+                      : (isInCheck(board, 'black') && currentTurn === 'black' ? '被将军！' : '黑方')}
                   </span>
                 </div>
               </div>
-              <div className={`timer ${currentTurn === 'black' ? 'timer-active' : ''} ${blackTime < 30 ? 'timer-danger' : ''}`}>
-                {formatTime(blackTime)}
+              <div className={`timer ${currentTurn === (viewFlipped ? 'red' : 'black') ? 'timer-active' : ''} ${(viewFlipped ? redTime : blackTime) < 30 ? 'timer-danger' : ''}`}>
+                {formatTime(viewFlipped ? redTime : blackTime)}
               </div>
             </div>
             
             {/* 棋盘 */}
             <div className="board-container">
               <ChessBoard
-                board={localBoard}
+                board={board}
                 selectedPiece={selectedPiece}
                 validMoves={settings.showHints ? validMoves : []}
-                currentTurn={currentTurn}
                 mySide={mySide}
                 onSquareClick={handleSquareClick}
                 lastMove={lastMove}
@@ -553,16 +486,18 @@ export const GamePage: React.FC = () => {
               </div>
               <div className="player-bar bottom-bar">
                 <div className="player-info">
-                  <span className="player-avatar red-avatar">帥</span>
+                  <span className={`player-avatar ${viewFlipped ? 'black-avatar' : 'red-avatar'}`}>{viewFlipped ? '將' : '帥'}</span>
                   <div className="player-detail">
-                    <span className="player-name">{mySide === 'red' ? (user?.username || '红方') : (playerNames.red || '红方（等待中）')}</span>
+                    <span className="player-name">{viewFlipped ? (user?.username || '游客') : (mySide === 'red' ? (user?.username || '游客') : '对手')}</span>
                     <span className="player-rating-text">
-                      {isInCheck(localBoard, 'red') && currentTurn === 'red' ? '被将军！' : '红方'}
+                      {viewFlipped
+                        ? (isInCheck(board, 'black') && currentTurn === 'black' ? '被将军！' : '黑方')
+                        : (isInCheck(board, 'red') && currentTurn === 'red' ? '被将军！' : '红方')}
                     </span>
                   </div>
                 </div>
-                <div className={`timer ${currentTurn === 'red' ? 'timer-active' : ''} ${redTime < 30 ? 'timer-danger' : ''}`}>
-                  {formatTime(redTime)}
+                <div className={`timer ${currentTurn === (viewFlipped ? 'black' : 'red') ? 'timer-active' : ''} ${(viewFlipped ? blackTime : redTime) < 30 ? 'timer-danger' : ''}`}>
+                  {formatTime(viewFlipped ? blackTime : redTime)}
                 </div>
               </div>
             </div>
@@ -607,33 +542,21 @@ export const GamePage: React.FC = () => {
         {mobileMenuOpen && (
           <div className="mobile-panel mobile-menu-panel">
             <button className="mobile-menu-btn" onClick={() => { handleResign(); setMobileMenuOpen(false); }} disabled={gameStatus === 'finished'}>认输</button>
-            <button className="mobile-menu-btn" onClick={() => { addToast('求和请求已发送', 'info'); setMobileMenuOpen(false); }} disabled={gameStatus === 'finished'}>求和</button>
-            <button className="mobile-menu-btn" onClick={() => { handleUndo(); setMobileMenuOpen(false); }} disabled={moveHistory.length < 2 || gameStatus === 'finished'}>悔棋</button>
+            <button className="mobile-menu-btn" onClick={() => { handleDraw(); setMobileMenuOpen(false); }} disabled={gameStatus === 'finished'}>求和</button>
+            <button className="mobile-menu-btn" onClick={() => { handleUndo(); setMobileMenuOpen(false); }} disabled={moveHistory.length < 1 || gameStatus === 'finished'}>悔棋</button>
             <button className="mobile-menu-btn" onClick={() => { setMobileMenuOpen(false); setMobileSettingsOpen(true); }}>设置</button>
             {gameStatus === 'finished' && (
               <>
                 <div className="mobile-gameover-divider" />
-                <div className="mobile-menu-result">{winner === 'red' ? '红方获胜！' : '黑方获胜！'}</div>
-                <button
-                  className="mobile-menu-btn mobile-menu-restart"
-                  onClick={() => {
-                    if (roomId && isSupabaseConfigured()) {
-                      navigate('/lobby');
-                    } else {
-                      setLocalBoard(initBoard());
-                      setMoveHistory([]);
-                      setCurrentTurn('red');
-                      setGameStatus('playing');
-                      setWinner(null);
-                      const { minutes } = parseTimeControl('10+0');
-                      setRedTime(minutes * 60);
-                      setBlackTime(minutes * 60);
-                    }
-                    setMobileMenuOpen(false);
-                  }}
-                >
-                  {roomId && isSupabaseConfigured() ? '返回大厅' : '再来一局'}
-                </button>
+                <div className="mobile-menu-result">{winner === 'red' ? '红方获胜！' : winner === 'black' ? '黑方获胜！' : '对局结束'}</div>
+                {(!roomId || !isSupabaseConfigured()) && (
+                  <button
+                    className="mobile-menu-btn mobile-menu-restart"
+                    onClick={handleRestart}
+                  >
+                    再来一局
+                  </button>
+                )}
               </>
             )}
           </div>
