@@ -12,11 +12,11 @@ export const LobbyPage: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [page, setPage] = useState(1);
   const pageSize = 10;
-  
+
   useEffect(() => {
-    // 进入大厅时先清理过期房间（数据库端另有 pg_cron 每分钟兑底清理），再刷新列表
+    // 进入大厅时先清理过期房间，再刷新列表
     cleanupStaleRooms().then(() => fetchRooms());
-    
+
     // 订阅房间更新
     const channel = supabase
       .channel('lobby')
@@ -28,9 +28,15 @@ export const LobbyPage: React.FC = () => {
         fetchRooms();
       })
       .subscribe();
-    
+
+    // 定时清理过期房间并刷新列表（每 30 秒）
+    const refreshTimer = setInterval(() => {
+      cleanupStaleRooms().then(() => fetchRooms());
+    }, 30 * 1000);
+
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(refreshTimer);
     };
   }, []);
   
