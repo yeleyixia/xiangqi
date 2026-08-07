@@ -83,9 +83,29 @@ export const useLobbyStore = create<LobbyStore>((set, get) => ({
       .in('status', ['waiting', 'playing'])
       .order('created_at', { ascending: false })
       .limit(50);
-    
+
     if (!error && data) {
-      set({ rooms: data });
+      // 客户端兜底过滤：即使服务端 cleanup_stale_rooms RPC 未生效，
+      // 也确保过期房间不在大厅展示
+      const now = Date.now();
+      const filtered = data.filter((room: Room) => {
+        const createdAt = new Date(room.created_at).getTime();
+        const ageMs = now - createdAt;
+
+        if (room.status === 'waiting') {
+          // 等待中：超过 10 分钟视为过期
+          return ageMs < 10 * 60 * 1000;
+        }
+
+        if (room.status === 'playing') {
+          // 对弈中：超过时间控制时长 + 2 分钟缓冲视为过期
+          const { minutes } = parseTimeControl(room.time_control);
+          return ageMs < (minutes + 2) * 60 * 1000;
+        }
+
+        return true;
+      });
+      set({ rooms: filtered });
     }
     set({ isLoading: false });
   },
@@ -93,14 +113,36 @@ export const useLobbyStore = create<LobbyStore>((set, get) => ({
   // 清理过期房间：根据创建时间 + 时间控制时长自动清空，释放数据与资源
   cleanupStaleRooms: async () => {
     if (!isSupabaseConfigured()) return 0;
-    
+
     // 调用服务端 RPC（数据库端还配置了 pg_cron 每分钟兜底清理）
     const { data, error } = await supabase.rpc('cleanup_stale_rooms');
     if (error) {
       console.error('cleanup_stale_rooms RPC error:', error);
+      // RPC 不可用时，前端直接删除过期房间作为兜底
+      const now = new Date();
+      const tenMinAgo = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
+      // 1. 删除等待超时的房间
+      await supabase.from('rooms').delete().eq('status', 'waiting').lt('created_at', tenMinAgo);
+      // 2. 删除对弈超时的房间（按各房间的时间控制计算）
+      const { data: playingRooms } = await supabase
+        .from('rooms')
+        .select('id, time_control, created_at')
+        .eq('status', 'playing');
+      if (playingRooms && playingRooms.length > 0) {
+        const expiredIds = playingRooms
+          .filter((r: { id: string; time_control: string; created_at: string }) => {
+            const { minutes } = parseTimeControl(r.time_control);
+            return new Date(r.created_at) < new Date(now.getTime() - (minutes + 2) * 60 * 1000);
+          })
+          .map((r: { id: string }) => r.id);
+        if (expiredIds.length > 0) {
+          await supabase.from('rooms').delete().in('id', expiredIds);
+        }
+      }
+      get().fetchRooms();
       return 0;
     }
-    
+
     // 清理后刷新列表，保证大厅展示与数据库一致
     if (typeof data === 'number' && data > 0) {
       get().fetchRooms();
