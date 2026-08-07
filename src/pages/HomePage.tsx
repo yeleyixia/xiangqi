@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Link } from 'react-router';
 import { useLobbyStore } from '../store';
 import { initBoard } from '../lib/chess';
-import { loadPiecesImage, drawPieceSprite } from '../lib/pieces';
+import { loadPiecesImage, drawPieceSprite, getPieceRects } from '../lib/pieces';
 
 export const HomePage: React.FC = () => {
   const { rooms, fetchRooms, onlineCount } = useLobbyStore();
@@ -50,7 +50,7 @@ export const HomePage: React.FC = () => {
             if (piece) {
               const px = ox + c * csx;
               const py = oy + r * csy;
-              drawPieceSprite(ctx, piece, px, py, pieceSize, piecesImg);
+              drawPieceSprite(ctx, piece, px, py, pieceSize, piecesImg, getPieceRects(null));
             }
           }
         }

@@ -144,12 +144,6 @@ export const GamePage: React.FC = () => {
       }
     }
     
-    // 开局特效：玩家进入棋盘时各自触发（尚无走子时）
-    if (data.move_history?.length === 0 && !openingShownRef.current) {
-      openingShownRef.current = true;
-      triggerFx('opening');
-    }
-    
     // 初始化已处理步数，避免进入中途对局时误触发上一步特效
     lastMoveCountRef.current = data.move_history?.length || 0;
     
@@ -162,6 +156,14 @@ export const GamePage: React.FC = () => {
   const currentTurn: Side = room?.current_turn || 'red';
   const gameStatus = room?.status || 'waiting';
   const winner = room?.winner || null;
+
+  // 开局特效：双方玩家都加入后（status 变为 playing 且尚无走子）才触发
+  useEffect(() => {
+    if (gameStatus === 'playing' && moveHistory.length === 0 && !openingShownRef.current) {
+      openingShownRef.current = true;
+      triggerFx('opening');
+    }
+  }, [gameStatus, moveHistory.length]);
   
   // 走子特效检测：监听走子历史变化，双方实时看到
   useEffect(() => {
