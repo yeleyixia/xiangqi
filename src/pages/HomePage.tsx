@@ -102,44 +102,6 @@ export const HomePage: React.FC = () => {
         </div>
       </main>
       
-      <section className="features">
-        <div className="container">
-          <h2 className="section-title">平台特色</h2>
-          <div className="feature-grid">
-            <div className="feature-card">
-              <div className="feature-icon">⚡</div>
-              <h3>实时对弈</h3>
-              <p>毫秒级延迟，走子即时同步，感受面对面的对弈体验</p>
-            </div>
-            <div className="feature-card">
-              <div className="feature-icon">🏆</div>
-              <h3>等级排名</h3>
-              <p>专业等级分系统，精准匹配实力相当的对手</p>
-            </div>
-            <div className="feature-card">
-              <div className="feature-icon">📋</div>
-              <h3>棋局回放</h3>
-              <p>完整记录每一步走法，复盘分析提升棋艺</p>
-            </div>
-            <div className="feature-card">
-              <div className="feature-icon">💬</div>
-              <h3>实时聊天</h3>
-              <p>对局中与对手交流，以棋会友，乐在棋中</p>
-            </div>
-            <div className="feature-card">
-              <div className="feature-icon">⏱</div>
-              <h3>多种计时</h3>
-              <p>支持固定时间、加时制等多种时间控制</p>
-            </div>
-            <div className="feature-card">
-              <div className="feature-icon">🛡</div>
-              <h3>公平竞技</h3>
-              <p>服务端验证走法，杜绝作弊，确保公平对弈</p>
-            </div>
-          </div>
-        </div>
-      </section>
-      
       <section className="rooms-preview">
         <div className="container">
           <h2 className="section-title">热门房间</h2>
