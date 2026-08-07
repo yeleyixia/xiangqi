@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { useAuthStore } from '../store';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
 interface GameRecordRow {
   id: string;
@@ -16,7 +16,7 @@ interface GameRecordRow {
 }
 
 export const ProfilePage: React.FC = () => {
-  const { user, isGuest, fetchProfile } = useAuthStore();
+  const { user, fetchProfile } = useAuthStore();
   const [records, setRecords] = useState<GameRecordRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,22 +47,6 @@ export const ProfilePage: React.FC = () => {
     loadRecords();
   }, [user?.id]);
   
-  if (isGuest || !isSupabaseConfigured()) {
-    return (
-      <>
-        <div className="bg-pattern"></div>
-        <main className="lobby-main">
-          <div className="empty-state" style={{ minHeight: '60vh' }}>
-            <div className="empty-icon">👤</div>
-            <div className="empty-title">游客模式</div>
-            <div className="empty-desc">登录后可查看个人资料与对局记录</div>
-            <Link to="/auth" className="btn btn-primary">登录/注册</Link>
-          </div>
-        </main>
-      </>
-    );
-  }
-  
   if (!user) {
     return (
       <>
@@ -71,7 +55,7 @@ export const ProfilePage: React.FC = () => {
           <div className="empty-state" style={{ minHeight: '60vh' }}>
             <div className="empty-icon">👤</div>
             <div className="empty-title">请先登录</div>
-            <div className="empty-desc">登录后查看个人资料</div>
+            <div className="empty-desc">登录后查看个人资料与对局记录</div>
             <Link to="/auth" className="btn btn-primary">登录/注册</Link>
           </div>
         </main>
