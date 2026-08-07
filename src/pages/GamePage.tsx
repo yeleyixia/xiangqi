@@ -46,11 +46,11 @@ export const GamePage: React.FC = () => {
 
   // 触发棋盘中央特效图（开局/当头炮/吃子/将军/绝杀）
   const FX_DURATION: Record<string, number> = {
-    opening: 3000,
-    centerCannon: 3000,
-    capture: 3000,
-    check: 3800,
-    checkmate: 3800
+    opening: 2500,
+    centerCannon: 2000,
+    capture: 1500,
+    check: 2500,
+    checkmate: 4000
   };
   const triggerFx = (type: 'opening' | 'centerCannon' | 'capture' | 'check' | 'checkmate') => {
     if (fxTimerRef.current) {
