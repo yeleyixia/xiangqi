@@ -87,7 +87,7 @@ export const HomePage: React.FC = () => {
             在线中国象棋对弈平台，与天下棋友切磋棋艺。
           </p>
           <div className="hero-actions">
-            <Link to="/game" className="btn btn-primary btn-lg">
+            <Link to="/lobby" className="btn btn-primary btn-lg">
               <span className="btn-icon">⚔</span>
               开始对弈
             </Link>

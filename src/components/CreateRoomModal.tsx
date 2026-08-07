@@ -18,8 +18,8 @@ const TIME_OPTIONS: { value: TimeControl; label: string; desc: string }[] = [
 ];
 
 export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ onClose }) => {
-  const { user, isGuest } = useAuthStore();
-  const defaultName = user ? `${user.username}的房间` : '棋友的房间';
+  const { user } = useAuthStore();
+  const defaultName = `${user!.username}的房间`;
   const [name, setName] = useState(defaultName);
   const [timeControl, setTimeControl] = useState<TimeControl>('10+0');
   const [loading, setLoading] = useState(false);
@@ -29,7 +29,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ onClose }) => 
   const navigate = useNavigate();
   
   const handleCreate = async () => {
-    if (!user && !isGuest) {
+    if (!user) {
       addToast('请先登录', 'error');
       return;
     }

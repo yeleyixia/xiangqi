@@ -16,7 +16,7 @@ interface GameRecordRow {
 }
 
 export const ProfilePage: React.FC = () => {
-  const { user, fetchProfile } = useAuthStore();
+  const { user } = useAuthStore();
   const [records, setRecords] = useState<GameRecordRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

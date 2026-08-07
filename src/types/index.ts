@@ -78,7 +78,6 @@ export interface GameSettings {
 export interface AuthState {
   user: UserProfile | null;
   isLoading: boolean;
-  isGuest: boolean;
 }
 
 // 游戏状态

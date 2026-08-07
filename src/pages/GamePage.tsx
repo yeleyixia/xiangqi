@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { ChessBoard } from '../components/ChessBoard';
 import { useAuthStore, useGameStore, useToastStore } from '../store';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { getValidMoves, posToNotation, parseTimeControl, isInCheck, isCheckmated } from '../lib/chess';
 import type { Side } from '../types';
 
@@ -16,7 +16,7 @@ export const GamePage: React.FC = () => {
     selectedPiece, selectPiece, validMoves, setValidMoves,
     settings, updateSettings,
     chatMessages, roomDeleted,
-    subscribeToRoom, makeMove: storeMakeMove, joinRoom, startLocalGame, undoLocalMove, resign, timeout, sendChat
+    subscribeToRoom, makeMove: storeMakeMove, joinRoom, resign, timeout, sendChat
   } = useGameStore();
   const { addToast } = useToastStore();
   
@@ -62,15 +62,9 @@ export const GamePage: React.FC = () => {
   
   // 加载房间数据
   useEffect(() => {
-    // 没有房间ID或 Supabase 未配置：创建本地对弈
-    if (!roomId || !isSupabaseConfigured()) {
-      startLocalGame();
+    if (!roomId) {
+      setError('房间ID缺失');
       setLoading(false);
-      if (roomId === undefined && isSupabaseConfigured()) {
-        addToast('本地对弈模式', 'info');
-      } else if (!isSupabaseConfigured()) {
-        addToast('本地对弈模式', 'info');
-      }
       return;
     }
     
@@ -156,7 +150,7 @@ export const GamePage: React.FC = () => {
   const gameStatus = room?.status || 'waiting';
   const winner = room?.winner || null;
   
-  // 计时器：每秒本地递减，联网对局回写服务器
+  // 计时器：每秒递减，超时回写服务器
   useEffect(() => {
     if (gameStatus !== 'playing') return;
     
@@ -164,8 +158,7 @@ export const GamePage: React.FC = () => {
       if (currentTurn === 'red') {
         setRedTime(t => {
           const next = Math.max(0, t - 1);
-          if (next === 0 && roomId && isSupabaseConfigured()) {
-            // 超时：同步判定到服务器
+          if (next === 0 && roomId) {
             timeout('red');
           }
           return next;
@@ -173,7 +166,7 @@ export const GamePage: React.FC = () => {
       } else {
         setBlackTime(t => {
           const next = Math.max(0, t - 1);
-          if (next === 0 && roomId && isSupabaseConfigured()) {
+          if (next === 0 && roomId) {
             timeout('black');
           }
           return next;
@@ -187,20 +180,6 @@ export const GamePage: React.FC = () => {
       }
     };
   }, [currentTurn, gameStatus]);
-  
-  // 检查超时（本地对弈）
-  useEffect(() => {
-    if (!room || room.id !== 'local') return;
-    if (gameStatus !== 'playing') return;
-    
-    if (redTime === 0) {
-      timeout('red');
-      addToast('红方超时，黑方获胜！', 'info');
-    } else if (blackTime === 0) {
-      timeout('black');
-      addToast('黑方超时，红方获胜！', 'info');
-    }
-  }, [redTime, blackTime, gameStatus]);
   
   // 滚动聊天到底部
   useEffect(() => {
@@ -217,25 +196,23 @@ export const GamePage: React.FC = () => {
       return;
     }
     
-    const isLocal = !roomId || !isSupabaseConfigured() || room?.id === 'local';
-    
-    // 联网对局：观战者不可走子
-    if (!isLocal && !mySide) {
+    // 观战者不可走子
+    if (!mySide) {
       addToast('你正在观战，无法走子', 'info');
       return;
     }
     
-    // 联网对局：只能走自己的棋子（服务端也会校验）
-    if (!isLocal && mySide && currentTurn !== mySide) {
+    // 只能走自己的棋子（服务端也会校验）
+    if (mySide && currentTurn !== mySide) {
       addToast('还没轮到你走棋', 'info');
       return;
     }
     
     const piece = board[row]?.[col];
     
-    // 联网对局：未选中棋子时，只能选择己方棋子
+    // 未选中棋子时，只能选择己方棋子
     // 注意：若已选中棋子，点击敌方棋子是"吃子"动作，不能被这里拦截
-    if (piece && !isLocal && mySide && piece.side !== mySide && !selectedPiece) {
+    if (piece && mySide && piece.side !== mySide && !selectedPiece) {
       addToast('只能移动自己的棋子', 'info');
       return;
     }
@@ -281,7 +258,7 @@ export const GamePage: React.FC = () => {
         }
       } else if (piece) {
         // 选择新棋子
-        if (piece.side === currentTurn && (isLocal || piece.side === mySide)) {
+        if (piece.side === currentTurn && piece.side === mySide) {
           selectPiece({ row, col });
           setValidMoves(getValidMoves(board, row, col));
         } else {
@@ -296,12 +273,12 @@ export const GamePage: React.FC = () => {
       }
     } else {
       // 选择棋子
-      if (piece && piece.side === currentTurn && (isLocal || piece.side === mySide)) {
+      if (piece && piece.side === currentTurn && piece.side === mySide) {
         selectPiece({ row, col });
         setValidMoves(getValidMoves(board, row, col));
       }
     }
-  }, [board, selectedPiece, validMoves, currentTurn, gameStatus, mySide, roomId, room?.id]);
+  }, [board, selectedPiece, validMoves, currentTurn, gameStatus, mySide]);
   
   // 发送聊天消息
   const handleSendChat = async () => {
@@ -310,16 +287,11 @@ export const GamePage: React.FC = () => {
     setChatInput('');
   };
   
-  // 悔棋（本地对弈直接撤销；联网对局走请求制，经聊天广播给对手）
+  // 悔棋（联网对局走请求制，经聊天广播给对手）
   const handleUndo = () => {
     if (moveHistory.length < 1) return;
-    if (!roomId || !isSupabaseConfigured() || room?.id === 'local') {
-      undoLocalMove();
-      addToast('已悔棋', 'info');
-    } else {
-      addToast('悔棋请求已发送给对手', 'info');
-      useGameStore.getState().requestUndo();
-    }
+    addToast('悔棋请求已发送给对手', 'info');
+    useGameStore.getState().requestUndo();
   };
   
   // 认输
@@ -330,22 +302,12 @@ export const GamePage: React.FC = () => {
       return;
     }
     await resign();
-    if (room?.id === 'local') {
-      const winner = room.current_turn === 'red' ? 'black' : 'red';
-      addToast(`${winner === 'red' ? '红方' : '黑方'}认输`, 'info');
-    }
   };
   
   // 求和
   const handleDraw = () => {
     addToast('求和请求已发送', 'info');
-    sendChat('请求和棋');
-  };
-  
-  // 再来一局（本地对弈）
-  const handleRestart = () => {
-    startLocalGame();
-    setMobileMenuOpen(false);
+    useGameStore.getState().offerDraw();
   };
   
   // 格式化时间
@@ -488,7 +450,7 @@ export const GamePage: React.FC = () => {
                 <div className="player-info">
                   <span className={`player-avatar ${viewFlipped ? 'black-avatar' : 'red-avatar'}`}>{viewFlipped ? '將' : '帥'}</span>
                   <div className="player-detail">
-                    <span className="player-name">{viewFlipped ? (user?.username || '游客') : (mySide === 'red' ? (user?.username || '游客') : '对手')}</span>
+                    <span className="player-name">{viewFlipped ? (user?.username || '') : (mySide === 'red' ? (user?.username || '') : '对手')}</span>
                     <span className="player-rating-text">
                       {viewFlipped
                         ? (isInCheck(board, 'black') && currentTurn === 'black' ? '被将军！' : '黑方')
@@ -549,14 +511,6 @@ export const GamePage: React.FC = () => {
               <>
                 <div className="mobile-gameover-divider" />
                 <div className="mobile-menu-result">{winner === 'red' ? '红方获胜！' : winner === 'black' ? '黑方获胜！' : '对局结束'}</div>
-                {(!roomId || !isSupabaseConfigured()) && (
-                  <button
-                    className="mobile-menu-btn mobile-menu-restart"
-                    onClick={handleRestart}
-                  >
-                    再来一局
-                  </button>
-                )}
               </>
             )}
           </div>

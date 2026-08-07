@@ -1071,13 +1071,15 @@ SET search_path = public
 AS $$
 DECLARE
   cleaned INTEGER := 0;
+  affected INTEGER;
 BEGIN
   -- 等待中的房间：创建后超过 10 分钟仍无人加入，直接清理
   DELETE FROM rooms
   WHERE status = 'waiting'
     AND created_at < NOW() - INTERVAL '10 minutes'
     AND (red_player IS NULL OR black_player IS NULL);
-  cleaned := cleaned + ROW_COUNT;
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  cleaned := cleaned + affected;
 
   -- 对弈中的房间：从创建时间起超过对应时间控制时长自动清理
   DELETE FROM rooms
@@ -1085,13 +1087,15 @@ BEGIN
     AND created_at < NOW() - (
       COALESCE((regexp_split_to_array(time_control, '\+'))[1]::INT, 10) * INTERVAL '1 minute'
     );
-  cleaned := cleaned + ROW_COUNT;
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  cleaned := cleaned + affected;
 
   -- 已结束的房间：结束后超过 10 分钟自动清理
   DELETE FROM rooms
   WHERE status = 'finished'
     AND updated_at < NOW() - INTERVAL '10 minutes';
-  cleaned := cleaned + ROW_COUNT;
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  cleaned := cleaned + affected;
 
   RETURN cleaned;
 END;
@@ -1115,3 +1119,25 @@ EXCEPTION WHEN undefined_table THEN
   NULL;
 END;
 $$;
+
+-- =====================================================================
+-- 用户名查邮箱：支持用户名/邮箱双方式登录
+-- =====================================================================
+CREATE OR REPLACE FUNCTION public.get_email_by_username(p_username TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_email TEXT;
+BEGIN
+  SELECT au.email INTO v_email
+  FROM auth.users au
+  JOIN public.profiles p ON p.id = au.id
+  WHERE p.username = p_username;
+
+  RETURN v_email;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_email_by_username(TEXT) TO anon, authenticated;

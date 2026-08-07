@@ -21,7 +21,7 @@ const App: React.FC = () => {
     // 初始化认证状态
     const initAuth = async () => {
       if (!isSupabaseConfigured()) {
-        // Supabase 未配置，直接进入（本地对弈模式）
+        // Supabase 未配置，显示配置提示
         setLoading(false);
         setInitialized(true);
         return;
@@ -76,7 +76,6 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/lobby" element={<LobbyPage />} />
-          <Route path="/game" element={<GamePage />} />
           <Route path="/game/:roomId" element={<GamePage />} />
           <Route path="/auth" element={<AuthPage />} />
           <Route path="/profile" element={<ProfilePage />} />

@@ -1,7 +1,7 @@
 import { Piece, PieceType, Side, Position, Move } from '../types';
 
 // 棋子名称映射
-export const PIECE_NAMES: Record<PieceType, Record<Side, string>> = {
+const PIECE_NAMES: Record<PieceType, Record<Side, string>> = {
   K: { red: '帥', black: '將' },
   A: { red: '仕', black: '士' },
   B: { red: '相', black: '象' },
@@ -12,7 +12,7 @@ export const PIECE_NAMES: Record<PieceType, Record<Side, string>> = {
 };
 
 // 深拷贝棋盘（内外两层都复制，避免共享行引用）
-export function cloneBoard(board: (Piece | null)[][]): (Piece | null)[][] {
+function cloneBoard(board: (Piece | null)[][]): (Piece | null)[][] {
   return board.map(row => [...row]);
 }
 
@@ -217,7 +217,7 @@ export function isInCheck(board: (Piece | null)[][], side: Side): boolean {
 }
 
 // 检查将帅对脸
-export function kingsFacing(board: (Piece | null)[][]): boolean {
+function kingsFacing(board: (Piece | null)[][]): boolean {
   const redKing = findKing(board, 'red');
   const blackKing = findKing(board, 'black');
   
@@ -258,55 +258,6 @@ export function getValidMoves(board: (Piece | null)[][], row: number, col: numbe
     
     return valid;
   });
-}
-
-// 执行走子（内部深拷贝棋盘，不修改原棋盘）
-export function makeMove(
-  board: (Piece | null)[][],
-  from: Position,
-  to: Position,
-  moveHistory: Move[]
-): { board: (Piece | null)[][]; moveHistory: Move[]; captured: Piece | null } {
-  const newBoard = cloneBoard(board);
-  const piece = newBoard[from.row][from.col];
-  const captured = newBoard[to.row][to.col];
-  
-  const move: Move = {
-    from,
-    to,
-    piece: piece!,
-    captured,
-    timestamp: Date.now()
-  };
-  
-  newBoard[to.row][to.col] = piece;
-  newBoard[from.row][from.col] = null;
-  
-  return {
-    board: newBoard,
-    moveHistory: [...moveHistory, move],
-    captured
-  };
-}
-
-// 悔棋
-export function undoMove(
-  board: (Piece | null)[][],
-  moveHistory: Move[]
-): { board: (Piece | null)[][]; moveHistory: Move[] } | null {
-  if (moveHistory.length === 0) return null;
-  
-  const newBoard = cloneBoard(board);
-  const newHistory = [...moveHistory];
-  const lastMove = newHistory.pop()!;
-  
-  newBoard[lastMove.from.row][lastMove.from.col] = lastMove.piece;
-  newBoard[lastMove.to.row][lastMove.to.col] = lastMove.captured;
-  
-  return {
-    board: newBoard,
-    moveHistory: newHistory
-  };
 }
 
 // 检查是否被将死（未处于被将军状态时直接返回 false，减少无谓的扫描）
