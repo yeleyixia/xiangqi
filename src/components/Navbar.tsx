@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router';
+import { Link, useLocation } from 'react-router-dom';
 import { User, LogOut, LogIn } from 'lucide-react';
 import { useAuthStore, useLobbyStore } from '../store';
 

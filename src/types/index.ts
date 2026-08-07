@@ -34,7 +34,7 @@ export interface UserProfile {
 
 // 房间相关
 export type RoomStatus = 'waiting' | 'playing' | 'finished';
-export type TimeControl = '5+0' | '5+3' | '10+0' | '10+5' | '15+0' | '30+0';
+export type TimeControl = '3+0' | '5+0' | '5+3' | '10+0' | '10+5' | '15+0' | '30+0';
 
 export interface Room {
   id: string;
@@ -87,6 +87,7 @@ export interface GameState {
   mySide: Side | null;
   selectedPiece: Position | null;
   validMoves: Position[];
+  isMyTurn: boolean;
   settings: GameSettings;
   chatMessages: ChatMessage[];
 }

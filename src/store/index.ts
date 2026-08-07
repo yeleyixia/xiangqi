@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { UserProfile, Room, Side, Position, GameSettings, ChatMessage, TimeControl } from '../types';
-import { initBoard, getValidMoves, makeMove as doMove, isInCheck, isCheckmated, parseTimeControl, cloneBoard } from '../lib/chess';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { initBoard, getValidMoves, makeMove as doMove } from '../lib/chess';
+import { supabase } from '../lib/supabase';
 
 // 认证状态
 interface AuthStore {
@@ -56,12 +56,14 @@ interface LobbyStore {
   setOnlineCount: (count: number) => void;
   setLoading: (loading: boolean) => void;
   fetchRooms: () => Promise<void>;
-  cleanupStaleRooms: () => Promise<number>;
-  createRoom: (name: string, timeControl: TimeControl) => Promise<Room | null>;
+  createRoom: (name: string, timeControl: TimeControl) => Promise<{ room: Room | null; error: any }>;
   joinRoom: (roomId: string, side: Side) => Promise<boolean>;
+  autoJoinRoom: (roomId: string) => Promise<{ side: Side | null; success: boolean }>;
+  quickMatch: () => Promise<{ roomId: string; side: Side } | null>;
+  cleanupExpiredRooms: () => Promise<void>;
 }
 
-export const useLobbyStore = create<LobbyStore>((set, get) => ({
+export const useLobbyStore = create<LobbyStore>((set) => ({
   rooms: [],
   onlineCount: 0,
   isLoading: false,
@@ -89,29 +91,11 @@ export const useLobbyStore = create<LobbyStore>((set, get) => ({
     }
     set({ isLoading: false });
   },
-  
-  // 清理过期房间：根据创建时间 + 时间控制时长自动清空，释放数据与资源
-  cleanupStaleRooms: async () => {
-    if (!isSupabaseConfigured()) return 0;
-    
-    // 调用服务端 RPC（数据库端还配置了 pg_cron 每分钟兜底清理）
-    const { data, error } = await supabase.rpc('cleanup_stale_rooms');
-    if (error) {
-      console.error('cleanup_stale_rooms RPC error:', error);
-      return 0;
-    }
-    
-    // 清理后刷新列表，保证大厅展示与数据库一致
-    if (typeof data === 'number' && data > 0) {
-      get().fetchRooms();
-    }
-    return data ?? 0;
-  },
   createRoom: async (name: string, timeControl: TimeControl) => {
     const user = useAuthStore.getState().user;
-    if (!user) return null;
+    if (!user) return { room: null, error: { message: '请先登录' } };
     
-    const { minutes } = parseTimeControl(timeControl);
+    const minutes = parseInt(timeControl.split('+')[0]);
     const totalTime = minutes * 60;
     
     const { data, error } = await supabase
@@ -132,25 +116,158 @@ export const useLobbyStore = create<LobbyStore>((set, get) => ({
     
     if (error) {
       console.error('Error creating room:', error);
-      return null;
+      return { room: null, error };
     }
     
-    return data;
+    return { room: data, error: null };
   },
   joinRoom: async (roomId: string, side: Side) => {
     const user = useAuthStore.getState().user;
     if (!user) return false;
     
-    // 通过 RPC 服务端校验：状态 waiting、座位空余、双方到齐自动开战并重置计时
-    const { data, error } = await supabase
-      .rpc('join_room', { p_room_id: roomId, p_side: side });
+    const field = side === 'red' ? 'red_player' : 'black_player';
     
-    if (error) {
-      console.error('Error joining room:', error);
-      return false;
+    const { error } = await supabase
+      .from('rooms')
+      .update({ [field]: user.id })
+      .eq('id', roomId);
+    
+    return !error;
+  },
+  autoJoinRoom: async (roomId: string) => {
+    const user = useAuthStore.getState().user;
+    if (!user) return { side: null, success: false };
+    
+    // 获取房间最新状态
+    const { data: room, error } = await supabase
+      .from('rooms')
+      .select('*')
+      .eq('id', roomId)
+      .single();
+    
+    if (error || !room) return { side: null, success: false };
+    
+    // 如果已经有人在等，我是第二个人 -> 加入空位
+    if (room.status === 'waiting') {
+      if (room.red_player && !room.black_player && room.red_player !== user.id) {
+        // 加入黑方
+        const { error: joinErr } = await supabase
+          .from('rooms')
+          .update({
+            black_player: user.id,
+            status: 'playing',
+            last_move_at: new Date().toISOString()
+          })
+          .eq('id', roomId)
+          .eq('status', 'waiting');
+        return { side: 'black', success: !joinErr };
+      }
+      if (room.black_player && !room.red_player && room.black_player !== user.id) {
+        // 加入红方（极少情况：创建者离开后房间还在）
+        const { error: joinErr } = await supabase
+          .from('rooms')
+          .update({
+            red_player: user.id,
+            status: 'playing',
+            last_move_at: new Date().toISOString()
+          })
+          .eq('id', roomId)
+          .eq('status', 'waiting');
+        return { side: 'red', success: !joinErr };
+      }
     }
     
-    return data?.ok === true;
+    // 已经在对弈中，我是观战者
+    if (room.red_player === user.id) return { side: 'red', success: true };
+    if (room.black_player === user.id) return { side: 'black', success: true };
+    
+    return { side: null, success: true }; // 观战
+  },
+  quickMatch: async () => {
+    const user = useAuthStore.getState().user;
+    if (!user) return null;
+    
+    // 先查找状态为 waiting 的房间（按创建时间升序，优先加入最早创建的）
+    const { data: waitingRooms, error } = await supabase
+      .from('rooms')
+      .select('*')
+      .eq('status', 'waiting')
+      .order('created_at', { ascending: true })
+      .limit(5);
+    
+    if (!error && waitingRooms && waitingRooms.length > 0) {
+      // 尝试加入第一个有空位的等待房间
+      for (const room of waitingRooms) {
+        if (!room.black_player && room.red_player !== user.id) {
+          const { error: joinErr } = await supabase
+            .from('rooms')
+            .update({
+              black_player: user.id,
+              status: 'playing',
+              last_move_at: new Date().toISOString()
+            })
+            .eq('id', room.id)
+            .eq('status', 'waiting');
+          if (!joinErr) return { roomId: room.id, side: 'black' };
+        }
+        if (!room.red_player && room.black_player !== user.id) {
+          const { error: joinErr } = await supabase
+            .from('rooms')
+            .update({
+              red_player: user.id,
+              status: 'playing',
+              last_move_at: new Date().toISOString()
+            })
+            .eq('id', room.id)
+            .eq('status', 'waiting');
+          if (!joinErr) return { roomId: room.id, side: 'red' };
+        }
+      }
+    }
+    
+    // 没有可加入的房间，创建新房间
+    const tc: TimeControl = '10+0';
+    const minutes = parseInt(tc.split('+')[0]);
+    const totalTime = minutes * 60;
+    
+    const { data: newRoom, error: createErr } = await supabase
+      .from('rooms')
+      .insert({
+        name: `${user.username || '棋友'}的房间`,
+        time_control: tc,
+        red_player: user.id,
+        status: 'waiting',
+        board: initBoard(),
+        move_history: [],
+        red_time: totalTime,
+        black_time: totalTime,
+        current_turn: 'red'
+      })
+      .select()
+      .single();
+    
+    if (createErr || !newRoom) return null;
+    return { roomId: newRoom.id, side: 'red' };
+  },
+  cleanupExpiredRooms: async () => {
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    
+    const { error } = await supabase
+      .from('rooms')
+      .delete()
+      .eq('status', 'waiting')
+      .lt('created_at', fiveMinutesAgo);
+    
+    if (!error) {
+      // 同时清理本地缓存
+      const { rooms } = get();
+      const filtered = rooms.filter(
+        r => !(r.status === 'waiting' && new Date(r.created_at) < new Date(fiveMinutesAgo))
+      );
+      set({ rooms: filtered });
+    }
+    
+    return !error;
   }
 }));
 
@@ -164,7 +281,6 @@ interface GameStore {
   chatMessages: ChatMessage[];
   isConnecting: boolean;
   error: string | null;
-  roomDeleted: boolean;
   
   setRoom: (room: Room | null) => void;
   setMySide: (side: Side | null) => void;
@@ -175,18 +291,12 @@ interface GameStore {
   setChatMessages: (msgs: ChatMessage[]) => void;
   setConnecting: (connecting: boolean) => void;
   setError: (error: string | null) => void;
-  setRoomDeleted: (deleted: boolean) => void;
   
   // 游戏操作
-  startLocalGame: (timeControl?: TimeControl) => void;
-  undoLocalMove: () => void;
   makeMove: (from: Position, to: Position) => Promise<boolean>;
-  joinRoom: (roomId: string, side: Side) => Promise<boolean>;
   resign: () => Promise<void>;
   offerDraw: () => Promise<void>;
   requestUndo: () => Promise<void>;
-  timeout: (loser: Side) => Promise<void>;
-  sendChat: (content: string) => Promise<void>;
   
   // 订阅房间更新
   subscribeToRoom: (roomId: string) => () => void;
@@ -209,7 +319,6 @@ export const useGameStore = create<GameStore>()(
       chatMessages: [],
       isConnecting: false,
       error: null,
-      roomDeleted: false,
       
       setRoom: (room) => set({ room }),
       setMySide: (side) => set({ mySide: side }),
@@ -224,229 +333,71 @@ export const useGameStore = create<GameStore>()(
       setChatMessages: (msgs) => set({ chatMessages: msgs }),
       setConnecting: (connecting) => set({ isConnecting: connecting }),
       setError: (error) => set({ error }),
-      setRoomDeleted: (deleted) => set({ roomDeleted: deleted }),
-      
-      startLocalGame: (timeControl: TimeControl = '10+0') => {
-        const { minutes } = parseTimeControl(timeControl);
-        const totalTime = minutes * 60;
-        set({
-          room: {
-            id: 'local',
-            name: '本地对弈',
-            time_control: timeControl,
-            red_player: null,
-            black_player: null,
-            status: 'playing',
-            board: initBoard(),
-            move_history: [],
-            current_turn: 'red',
-            red_time: totalTime,
-            black_time: totalTime,
-            last_move_at: new Date().toISOString(),
-            winner: null,
-            created_at: new Date().toISOString()
-          },
-          mySide: null,
-          selectedPiece: null,
-          validMoves: [],
-          chatMessages: [],
-          roomDeleted: false
-        });
-      },
-      
-      // 本地对弈悔棋：撤销最后一步（仅本地模式可用）
-      undoLocalMove: () => {
-        const { room } = get();
-        if (!room || room.id !== 'local') return;
-        const history = room.move_history || [];
-        if (history.length === 0) return;
-        
-        const newBoard = cloneBoard(room.board);
-        const newHistory = [...history];
-        const lastMove = newHistory.pop()!;
-        
-        newBoard[lastMove.from.row][lastMove.from.col] = lastMove.piece;
-        newBoard[lastMove.to.row][lastMove.to.col] = lastMove.captured;
-        
-        set({
-          room: {
-            ...room,
-            board: newBoard,
-            move_history: newHistory,
-            current_turn: (room.current_turn === 'red' ? 'black' : 'red') as Side
-          }
-        });
-      },
       
       makeMove: async (from: Position, to: Position) => {
         const { room, mySide } = get();
-        if (!room) return false;
+        if (!room || !mySide) return false;
         
-        // 对局未开始或已结束不允许走子
-        if (room.status !== 'playing') return false;
-        
-        const isLocal = room.id === 'local';
-        
-        // 联网对局：只能走自己回合、自己的棋子
-        if (!isLocal) {
-          if (!mySide) return false;
-          if (room.current_turn !== mySide) return false;
-          const piece = room.board[from.row]?.[from.col];
-          if (!piece || piece.side !== mySide) return false;
-        } else {
-          // 本地对弈：只能走当前回合方的棋子
-          const piece = room.board[from.row]?.[from.col];
-          if (!piece || piece.side !== room.current_turn) return false;
+        // 校验：是否是自己的回合
+        if (mySide !== room.current_turn) {
+          console.warn('Not your turn');
+          return false;
         }
         
-        // 验证走法（前端规则引擎预校验）
+        // 校验：是否移动自己的棋子
+        const piece = room.board[from.row][from.col];
+        if (!piece || piece.side !== mySide) {
+          console.warn('Not your piece');
+          return false;
+        }
+        
+        // 验证走法合法性
         const validMoves = getValidMoves(room.board, from.row, from.col);
         if (!validMoves.some(m => m.row === to.row && m.col === to.col)) {
+          console.warn('Invalid move');
           return false;
         }
         
-        // 本地对弈：直接本地结算
-        if (isLocal) {
-          const { board, moveHistory } = doMove(room.board, from, to, room.move_history);
-          const nextTurn: Side = room.current_turn === 'red' ? 'black' : 'red';
-          const inCheck = isInCheck(board, nextTurn);
-          const isMate = inCheck && isCheckmated(board, nextTurn);
-          
-          const patch: Record<string, unknown> = {
-            board,
-            move_history: moveHistory,
+        // 执行走子（只调用一次 doMove）
+        const result = doMove(room.board, from, to, room.move_history);
+        const nextTurn = room.current_turn === 'red' ? 'black' : 'red';
+        
+        // 同步到服务器
+        const { error } = await supabase
+          .from('rooms')
+          .update({
+            board: result.board,
+            move_history: result.moveHistory,
             current_turn: nextTurn,
             last_move_at: new Date().toISOString()
-          };
-          
-          if (isMate) {
-            patch.status = 'finished';
-            patch.winner = room.current_turn;
-            patch.result_reason = '将死';
-          }
-          
-          set({ room: { ...room, ...patch } as Room });
-          return true;
-        }
+          })
+          .eq('id', room.id);
         
-        // 联网对局：调用服务端 RPC（服务端完整规则校验 + 落库 + 胜负/超时结算）
-        const { data, error } = await supabase.rpc('make_move', {
-          p_room_id: room.id,
-          p_from_row: from.row,
-          p_from_col: from.col,
-          p_to_row: to.row,
-          p_to_col: to.col
-        });
-        
-        if (error) {
-          console.error('make_move RPC error:', error);
-          return false;
-        }
-        
-        if (data?.ok !== true) {
-          console.error('make_move rejected:', data?.error);
-          return false;
-        }
-        
-        return true;
-      },
-      
-      joinRoom: async (roomId: string, side: Side) => {
-        return useLobbyStore.getState().joinRoom(roomId, side);
+        return !error;
       },
       
       resign: async () => {
         const { room, mySide } = get();
-        if (!room || room.status === 'finished') return;
+        if (!room || !mySide) return;
         
-        // 本地对弈：直接结束
-        if (room.id === 'local') {
-          const winner = room.current_turn === 'red' ? 'black' : 'red';
-          set({ room: { ...room, status: 'finished', winner, result_reason: '认输' } as Room });
-          return;
-        }
-        
-        if (!mySide) return;
-        
-        // 联网对局：调用服务端 RPC（服务端校验参与者 + 写对局记录/统计）
-        const { data, error } = await supabase.rpc('resign_game', {
-          p_room_id: room.id
-        });
-        
-        if (error || data?.ok !== true) {
-          console.error('resign_game RPC error:', error, data);
-          return;
-        }
-      },
-      
-      timeout: async (loser: Side) => {
-        const { room } = get();
-        if (!room || room.status !== 'playing') return;
-        
-        const winner: Side = loser === 'red' ? 'black' : 'red';
-        
-        if (room.id === 'local') {
-          set({ room: { ...room, status: 'finished', winner, result_reason: '超时' } as Room });
-          return;
-        }
-        
-        // 联网对局：调用服务端 RPC，由服务端依据 last_move_at 计算是否超时
-        const { data, error } = await supabase.rpc('timeout_game', {
-          p_room_id: room.id
-        });
-        
-        if (error || data?.ok !== true) {
-          console.error('timeout_game RPC error:', error, data);
-          return;
-        }
+        await supabase
+          .from('rooms')
+          .update({
+            status: 'finished',
+            winner: mySide === 'red' ? 'black' : 'red',
+            result_reason: '认输'
+          })
+          .eq('id', room.id);
       },
       
       offerDraw: async () => {
-        const { room, mySide } = get();
-        if (!room || !mySide || room.status !== 'playing') return;
-        
-        // 通过聊天消息广播求和请求（由 sendChat 落库，实时回推给对手）
-        await get().sendChat(`请求和棋`);
+        // TODO: 实现求和逻辑
+        console.log('Offer draw');
       },
       
       requestUndo: async () => {
-        const { room, mySide } = get();
-        if (!room || !mySide || room.status !== 'playing') return;
-        
-        // 通过聊天消息广播悔棋请求
-        await get().sendChat(`请求悔棋`);
-      },
-      
-      sendChat: async (content: string) => {
-        const { room } = get();
-        const user = useAuthStore.getState().user;
-        const userId = user?.id || 'guest';
-        const username = user?.username || '游客';
-        
-        const msg: ChatMessage = {
-          id: Date.now().toString(),
-          room_id: room?.id || 'local',
-          user_id: userId,
-          username,
-          content,
-          created_at: new Date().toISOString()
-        };
-        
-        // 本地先行追加，保证发送者即时看到
-        get().addChatMessage(msg);
-        
-        // 联网对局：写入 chat_messages，经实时通道回推给对手
-        if (room && room.id !== 'local' && isSupabaseConfigured()) {
-          await supabase
-            .from('chat_messages')
-            .insert({
-              room_id: room.id,
-              user_id: userId === 'guest' ? null : userId,
-              username,
-              content,
-              is_system: false
-            });
-        }
+        // TODO: 实现悔棋逻辑
+        console.log('Request undo');
       },
       
       subscribeToRoom: (roomId: string) => {
@@ -462,19 +413,6 @@ export const useGameStore = create<GameStore>()(
             },
             (payload) => {
               set({ room: payload.new as Room });
-            }
-          )
-          .on(
-            'postgres_changes',
-            {
-              event: 'DELETE',
-              schema: 'public',
-              table: 'rooms',
-              filter: `id=eq.${roomId}`
-            },
-            () => {
-              // 房间被自动清理（超时清空）：标记后由 GamePage 引导玩家返回大厅
-              set({ roomDeleted: true, room: null });
             }
           )
           .on(
@@ -527,4 +465,3 @@ export const useToastStore = create<ToastStore>((set) => ({
     toasts: state.toasts.filter(t => t.id !== id)
   }))
 }));
-

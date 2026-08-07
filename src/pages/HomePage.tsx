@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Link } from 'react-router';
+import { Link } from 'react-router-dom';
 import { useLobbyStore } from '../store';
 import { initBoard } from '../lib/chess';
 import { loadPiecesImage, drawPieceSprite } from '../lib/pieces';
@@ -149,7 +149,7 @@ export const HomePage: React.FC = () => {
           <h2 className="section-title">热门房间</h2>
           <div className="room-table">
             <div className="room-header">
-              <span className="room-col-id">房间名称</span>
+              <span className="room-col-id">房间号</span>
               <span className="room-col-time">时间</span>
               <span className="room-col-red">红方</span>
               <span className="room-col-black">黑方</span>
@@ -157,10 +157,7 @@ export const HomePage: React.FC = () => {
             </div>
             {rooms.slice(0, 5).map(room => (
               <div key={room.id} className="room-row">
-                <span className="room-col-id">
-                  <span className="room-name">{room.name || '未命名房间'}</span>
-                  <small className="room-id-small">#{room.id.slice(-3)}</small>
-                </span>
+                <span className="room-col-id">#{room.id.slice(-3)}</span>
                 <span className="room-col-time">{room.time_control}</span>
                 <span className="room-col-red">
                   {room.red_player ? '玩家' : '—'}

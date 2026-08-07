@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuthStore, useToastStore } from '../store';
-import type { UserProfile } from '../types';
 
 interface AuthModalProps {
   onClose: () => void;
@@ -17,7 +16,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, initialMode = 'lo
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
-  const { setUser, fetchProfile } = useAuthStore();
+  const { setUser } = useAuthStore();
   const { addToast } = useToastStore();
   
   const handleLogin = async (e: React.FormEvent) => {
@@ -37,13 +36,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, initialMode = 'lo
     }
     
     if (data.user) {
-      // 获取用户资料（注册时由数据库触发器 handle_new_user 自动创建）
-      const profile = await fetchProfile(data.user.id);
-      if (!profile) {
-        setError('用户资料加载失败，请刷新重试');
-        setLoading(false);
-        return;
-      }
+      // 获取用户资料
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', data.user.id)
+        .single();
       
       setUser(profile);
       addToast('登录成功！', 'success');
@@ -81,27 +79,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, initialMode = 'lo
     }
     
     if (data.user) {
-      // profile 由数据库触发器 handle_new_user 自动创建，这里不再重复 insert
-      // 触发器创建可能异步完成，稍等后拉取
-      let profile: UserProfile | null = null;
-      for (let i = 0; i < 5; i++) {
-        profile = await fetchProfile(data.user.id);
-        if (profile) break;
-        await new Promise(r => setTimeout(r, 500));
-      }
-      
-      if (!profile) {
-        setError('注册成功，但资料初始化失败，请重新登录');
-        setLoading(false);
-        return;
-      }
+      // 创建用户资料
+      const { data: profile } = await supabase
+        .from('profiles')
+        .insert({
+          id: data.user.id,
+          username,
+          rating: 1500,
+          wins: 0,
+          losses: 0,
+          draws: 0
+        })
+        .select()
+        .single();
       
       setUser(profile);
       addToast('注册成功！', 'success');
-      onClose();
-    } else {
-      // 部分邮箱需验证后才可登录
-      addToast('注册成功！请前往邮箱验证', 'success');
       onClose();
     }
     

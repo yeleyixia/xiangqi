@@ -1,21 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router';
-import { RefreshCw, Plus } from 'lucide-react';
-import { useLobbyStore, useAuthStore } from '../store';
+import { Link, useNavigate } from 'react-router-dom';
+import { RefreshCw, Plus, Zap } from 'lucide-react';
+import { useLobbyStore, useAuthStore, useToastStore } from '../store';
 import { CreateRoomModal } from '../components/CreateRoomModal';
 import type { RoomStatus } from '../types';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export const LobbyPage: React.FC = () => {
-  const { rooms, fetchRooms, isLoading, onlineCount, cleanupStaleRooms } = useLobbyStore();
+  const { rooms, fetchRooms, isLoading, onlineCount, quickMatch, cleanupExpiredRooms } = useLobbyStore();
   const { user } = useAuthStore();
+  const { addToast } = useToastStore();
+  const navigate = useNavigate();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [page, setPage] = useState(1);
+  const [quickMatching, setQuickMatching] = useState(false);
   const pageSize = 10;
   
   useEffect(() => {
-    // 进入大厅时先清理过期房间（数据库端另有 pg_cron 每分钟兑底清理），再刷新列表
-    cleanupStaleRooms().then(() => fetchRooms());
+    fetchRooms();
+    cleanupExpiredRooms(); // 进入大厅时清理过期房间
     
     // 订阅房间更新
     const channel = supabase
@@ -29,13 +32,56 @@ export const LobbyPage: React.FC = () => {
       })
       .subscribe();
     
+    // 每30秒清理一次过期房间
+    const cleanupInterval = setInterval(() => {
+      cleanupExpiredRooms();
+    }, 30000);
+    
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(cleanupInterval);
     };
   }, []);
   
   const paginatedRooms = rooms.slice((page - 1) * pageSize, page * pageSize);
   const totalPages = Math.ceil(rooms.length / pageSize);
+  
+  // 快速对弈
+  const handleQuickMatch = async () => {
+    if (quickMatching) return;
+    setQuickMatching(true);
+    
+    try {
+      const result = await quickMatch();
+      if (result) {
+        addToast('匹配成功！进入对局', 'success');
+        navigate(`/game/${result.roomId}`);
+      } else {
+        addToast('匹配失败，请重试', 'error');
+      }
+    } catch {
+      addToast('匹配出错，请重试', 'error');
+    } finally {
+      setQuickMatching(false);
+    }
+  };
+  
+  // 计算房间创建时间
+  const getRoomAge = (createdAt: string) => {
+    const diff = Date.now() - new Date(createdAt).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return '刚刚';
+    if (mins < 60) return `${mins}分钟前`;
+    const hours = Math.floor(mins / 60);
+    return `${hours}小时前`;
+  };
+  
+  // 获取玩家显示名
+  const getPlayerDisplay = (playerId: string | null) => {
+    if (!playerId) return '—';
+    if (playerId === user?.id) return user.username || '我';
+    return '玩家';
+  };
   
   const getStatusLabel = (status: RoomStatus) => {
     switch (status) {
@@ -53,6 +99,14 @@ export const LobbyPage: React.FC = () => {
         <div className="lobby-header">
           <h1>游戏大厅</h1>
           <div className="lobby-actions">
+            <button 
+              className="btn btn-accent"
+              onClick={handleQuickMatch}
+              disabled={quickMatching}
+            >
+              <Zap size={16} className={quickMatching ? 'spin' : ''} />
+              {quickMatching ? '匹配中...' : '快速对弈'}
+            </button>
             <button 
               className="btn btn-primary"
               onClick={() => setShowCreateModal(true)}
@@ -80,11 +134,12 @@ export const LobbyPage: React.FC = () => {
             
             <div className="room-table lobby-table">
               <div className="room-header">
-                <span className="room-col-id">房间名称</span>
+                <span className="room-col-id">房间</span>
                 <span className="room-col-time">时间</span>
                 <span className="room-col-red">红方</span>
                 <span className="room-col-black">黑方</span>
                 <span className="room-col-state">状态</span>
+                <span className="room-col-age">创建</span>
                 <span className="room-col-action">操作</span>
               </div>
               
@@ -102,20 +157,20 @@ export const LobbyPage: React.FC = () => {
               ) : (
                 paginatedRooms.map(room => (
                   <div key={room.id} className="room-row">
-                    <span className="room-col-id">
-                      <span className="room-name">{room.name || '未命名房间'}</span>
-                      <small className="room-id-small">#{room.id.slice(-3)}</small>
-                    </span>
+                    <span className="room-col-id">#{room.id.slice(-3)}</span>
                     <span className="room-col-time">{room.time_control}</span>
                     <span className="room-col-red">
-                      {room.red_player ? '玩家' : '—'}
+                      {getPlayerDisplay(room.red_player)}
                     </span>
                     <span className="room-col-black">
-                      {room.black_player ? '玩家' : '—'}
+                      {getPlayerDisplay(room.black_player)}
                     </span>
                     <span className="room-col-state">
                       <span className={`status-dot ${room.status}`}></span>
                       {getStatusLabel(room.status)}
+                    </span>
+                    <span className="room-col-age">
+                      {getRoomAge(room.created_at)}
                     </span>
                     <span className="room-col-action">
                       <Link 

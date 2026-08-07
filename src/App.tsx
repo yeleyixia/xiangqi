@@ -1,18 +1,17 @@
 import React, { useEffect, useState, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Navbar } from './components/Navbar';
 import { ToastContainer } from './components/Toast';
 import { HomePage } from './pages/HomePage';
 const LobbyPage = lazy(() => import('./pages/LobbyPage').then(m => ({ default: m.LobbyPage })));
 const GamePage = lazy(() => import('./pages/GamePage').then(m => ({ default: m.GamePage })));
 const AuthPage = lazy(() => import('./pages/AuthPage').then(m => ({ default: m.AuthPage })));
-const ProfilePage = lazy(() => import('./pages/ProfilePage').then(m => ({ default: m.ProfilePage })));
 import { useAuthStore } from './store';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { useOnlinePresence } from './hooks/useOnlinePresence';
 
 const App: React.FC = () => {
-  const { setUser, setLoading, setGuest, fetchProfile } = useAuthStore();
+  const { setUser, setLoading, setGuest } = useAuthStore();
   const [initialized, setInitialized] = useState(false);
   
   useOnlinePresence();
@@ -31,11 +30,14 @@ const App: React.FC = () => {
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
-        // 统一复用 fetchProfile
-        const profile = await fetchProfile(session.user.id);
-        if (!profile) {
-          setLoading(false);
-        }
+        // 获取用户资料
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        
+        setUser(profile);
       } else {
         setLoading(false);
       }
@@ -45,7 +47,13 @@ const App: React.FC = () => {
       // 监听认证状态变化
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (event === 'SIGNED_IN' && session?.user) {
-          await fetchProfile(session.user.id);
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          
+          setUser(profile);
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
         }
@@ -79,7 +87,6 @@ const App: React.FC = () => {
           <Route path="/game" element={<GamePage />} />
           <Route path="/game/:roomId" element={<GamePage />} />
           <Route path="/auth" element={<AuthPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </Suspense>

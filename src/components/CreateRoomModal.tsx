@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { X } from 'lucide-react';
 import { TimeControl } from '../types';
 import { useAuthStore, useLobbyStore, useToastStore } from '../store';
-import { useNavigate } from 'react-router';
+import { useNavigate } from 'react-router-dom';
 
 interface CreateRoomModalProps {
   onClose: () => void;
 }
 
 const TIME_OPTIONS: { value: TimeControl; label: string; desc: string }[] = [
+  { value: '3+0', label: '3分钟', desc: '快棋' },
   { value: '5+0', label: '5分钟', desc: '快棋' },
   { value: '5+3', label: '5分+3秒', desc: '快棋' },
   { value: '10+0', label: '10分钟', desc: '标准' },
@@ -17,28 +18,32 @@ const TIME_OPTIONS: { value: TimeControl; label: string; desc: string }[] = [
   { value: '30+0', label: '30分钟', desc: '慢棋' },
 ];
 
+const generateRoomName = () => {
+  const letter = String.fromCharCode(65 + Math.floor(Math.random() * 26)); // A-Z
+  const number = Math.floor(Math.random() * 99) + 1; // 1-99
+  return `${letter}${number}`;
+};
+
 export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ onClose }) => {
-  const { user, isGuest } = useAuthStore();
-  const defaultName = user ? `${user.username}的房间` : '棋友的房间';
-  const [name, setName] = useState(defaultName);
+  const [name, setName] = useState(generateRoomName);
   const [timeControl, setTimeControl] = useState<TimeControl>('10+0');
   const [loading, setLoading] = useState(false);
   
+  const { user, isGuest } = useAuthStore();
   const { createRoom } = useLobbyStore();
   const { addToast } = useToastStore();
   const navigate = useNavigate();
   
   const handleCreate = async () => {
-    if (!user && !isGuest) {
-      addToast('请先登录', 'error');
+    if (!user) {
+      addToast(isGuest ? '游客无法创建房间，请登录或注册账号' : '请先登录', 'error');
       return;
     }
     
-    // 房间名称留空时自动生成默认名称
-    const roomName = name.trim() || defaultName;
+    const roomName = name.trim() || generateRoomName();
     
     setLoading(true);
-    const room = await createRoom(roomName, timeControl);
+    const { room, error } = await createRoom(roomName, timeControl);
     setLoading(false);
     
     if (room) {
@@ -46,7 +51,8 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ onClose }) => 
       onClose();
       navigate(`/game/${room.id}`);
     } else {
-      addToast('创建失败，请重试', 'error');
+      const msg = error?.message || '创建失败，请稍后重试';
+      addToast(msg, 'error');
     }
   };
   
@@ -59,7 +65,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ onClose }) => 
         
         <div className="modal-header">
           <h2 className="modal-title">创建房间</h2>
-          <p className="modal-subtitle">设置房间名称和时间控制</p>
+          <p className="modal-subtitle">已为您随机生成房间名称，可直接创建</p>
         </div>
         
         <div className="form-group">
@@ -67,7 +73,7 @@ export const CreateRoomModal: React.FC<CreateRoomModalProps> = ({ onClose }) => 
           <input
             type="text"
             className="form-input"
-            placeholder="例如：高手过招"
+            placeholder="随机生成，可直接使用"
             value={name}
             onChange={e => setName(e.target.value)}
             maxLength={20}

@@ -114,6 +114,9 @@ body {
 .btn-outline:hover { color: var(--text); border-color: var(--text-muted); background: var(--bg-surface); }
 .btn-gold { background: var(--gold-dim); color: #fff; border-color: var(--gold-dim); }
 .btn-gold:hover { background: var(--gold); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(212,162,78,0.3); }
+.btn-accent { background: linear-gradient(135deg, var(--gold-dim), var(--accent)); color: #fff; border-color: transparent; }
+.btn-accent:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(212,162,78,0.4); }
+.btn-accent:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
 .btn-danger { background: var(--red); color: #fff; border-color: var(--red); }
 .btn-danger:hover { background: var(--red-bright); }
 .btn-lg { padding: 12px 28px; font-size: 15px; border-radius: var(--radius-lg); }
@@ -184,40 +187,21 @@ body {
   font-size: 12px; color: var(--text-muted); font-weight: 600; letter-spacing: 1px;
   border-bottom: 1px solid var(--border);
 }
-.lobby-table .room-header { grid-template-columns: 60px 80px 1fr 1fr 80px auto; }
+.lobby-table .room-header { grid-template-columns: 60px 80px 1fr 1fr 80px 70px auto; }
 .room-row {
   display: grid; grid-template-columns: 60px 80px 1fr 1fr auto;
   padding: 10px 20px; border-bottom: 1px solid var(--border);
   font-size: 13px; align-items: center; transition: background 0.2s;
 }
-.lobby-table .room-row { grid-template-columns: 60px 80px 1fr 1fr 80px auto; }
+.lobby-table .room-row { grid-template-columns: 60px 80px 1fr 1fr 80px 70px auto; }
 .room-row:hover { background: rgba(200,85,61,0.05); }
 .room-row:last-child { border-bottom: none; }
 .room-col-id { color: var(--gold); font-weight: 600; font-family: monospace; }
-.room-col-id .room-name {
-  display: block;
-  color: var(--text);
-  font-weight: 600;
-  font-family: var(--font-serif);
-  font-size: 13px;
-  line-height: 1.3;
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.room-col-id .room-id-small {
-  display: block;
-  color: var(--text-dim);
-  font-family: monospace;
-  font-size: 11px;
-  font-weight: 400;
-  margin-top: 2px;
-}
 .room-col-time { color: var(--text-muted); }
 .room-col-red, .room-col-black { color: var(--text); }
 .room-col-red small, .room-col-black small { color: var(--text-dim); margin-left: 4px; }
 .room-col-state { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.room-col-age { color: var(--text-dim); font-size: 11px; }
 .status-dot {
   width: 8px; height: 8px; border-radius: 50%; display: inline-block;
 }
@@ -776,7 +760,7 @@ body {
   .nav-links { display: none; }
   .hero-actions { flex-direction: column; }
   .room-header, .room-row { grid-template-columns: 50px 70px 1fr auto !important; }
-  .room-col-black, .lobby-table .room-col-state { display: none; }
+  .room-col-black, .lobby-table .room-col-state, .room-col-age { display: none; }
 
   /* Mobile: maximize board to ~90% of screen */
   .game-main { padding: 2px 4px; }
