@@ -25,7 +25,6 @@ export const Navbar: React.FC = () => {
         <div className="nav-links">
           <Link to="/" className={isActive('/') ? 'active' : ''}>首页</Link>
           <Link to="/lobby" className={isActive('/lobby') ? 'active' : ''}>游戏大厅</Link>
-          <Link to="/lobby" className={isActive('/game') ? 'active' : ''}>快速对弈</Link>
         </div>
         
         <div className="nav-right">
