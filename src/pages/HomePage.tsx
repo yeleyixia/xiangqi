@@ -89,11 +89,7 @@ export const HomePage: React.FC = () => {
           <div className="hero-actions">
             <Link to="/lobby" className="btn btn-primary btn-lg">
               <span className="btn-icon">⚔</span>
-              开始对弈
-            </Link>
-            <Link to="/lobby" className="btn btn-gold btn-lg">
-              <span className="btn-icon">🏛</span>
-              游戏大厅
+              进入大厅
             </Link>
           </div>
         </div>
