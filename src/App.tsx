@@ -12,7 +12,7 @@ import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { useOnlinePresence } from './hooks/useOnlinePresence';
 
 const App: React.FC = () => {
-  const { setUser, setLoading, setGuest, fetchProfile } = useAuthStore();
+  const { setUser, setLoading, fetchProfile } = useAuthStore();
   const [initialized, setInitialized] = useState(false);
   
   useOnlinePresence();
@@ -21,8 +21,8 @@ const App: React.FC = () => {
     // 初始化认证状态
     const initAuth = async () => {
       if (!isSupabaseConfigured()) {
-        // Supabase 未配置，使用本地模式
-        setGuest(true);
+        // Supabase 未配置，直接进入（本地对弈模式）
+        setLoading(false);
         setInitialized(true);
         return;
       }
