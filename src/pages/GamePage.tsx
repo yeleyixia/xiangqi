@@ -27,6 +27,7 @@ export const GamePage: React.FC = () => {
   const [fxEffect, setFxEffect] = useState<{ type: 'opening' | 'centerCannon' | 'capture' | 'check' | 'checkmate'; show: boolean } | null>(null);
   const fxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastMoveCountRef = useRef(0);
+  const openingShownRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [redTime, setRedTime] = useState(600);
@@ -143,6 +144,15 @@ export const GamePage: React.FC = () => {
       }
     }
     
+    // 开局特效：玩家进入棋盘时各自触发（尚无走子时）
+    if (data.move_history?.length === 0 && !openingShownRef.current) {
+      openingShownRef.current = true;
+      triggerFx('opening');
+    }
+    
+    // 初始化已处理步数，避免进入中途对局时误触发上一步特效
+    lastMoveCountRef.current = data.move_history?.length || 0;
+    
     setLoading(false);
   };
   
@@ -153,14 +163,7 @@ export const GamePage: React.FC = () => {
   const gameStatus = room?.status || 'waiting';
   const winner = room?.winner || null;
   
-  // 开局特效：对局开始时触发（status 变为 playing 且尚无走子）
-  useEffect(() => {
-    if (gameStatus === 'playing' && moveHistory.length === 0) {
-      triggerFx('opening');
-    }
-  }, [gameStatus]);
-
-  // 走子特效检测：监听走子历史变化，双方都能看到效果
+  // 走子特效检测：监听走子历史变化，双方实时看到
   useEffect(() => {
     const moveCount = moveHistory.length;
     if (moveCount <= lastMoveCountRef.current) {
@@ -176,14 +179,7 @@ export const GamePage: React.FC = () => {
 
     lastMoveCountRef.current = moveCount;
 
-    // 当头炮特效：炮移动到中路（col 4）
-    if (lastMove.piece.type === 'C' && lastMove.to.col === 4) {
-      triggerFx('centerCannon');
-      return;
-    }
-
-    // 吃子/将军/绝杀特效
-    const captured = lastMove.captured;
+    // 检测将军/绝杀（优先级最高）
     const nextTurn: Side = lastMove.piece.side === 'red' ? 'black' : 'red';
     const inCheck = isInCheck(board, nextTurn);
     const isMate = inCheck && isCheckmated(board, nextTurn);
@@ -191,10 +187,22 @@ export const GamePage: React.FC = () => {
     if (isMate) {
       triggerFx('checkmate');
       addToast(`${lastMove.piece.side === 'red' ? '红方' : '黑方'}获胜！将杀！`, 'success');
-    } else if (inCheck) {
+      return;
+    }
+    if (inCheck) {
       triggerFx('check');
       addToast('将军！', 'info');
-    } else if (captured) {
+      return;
+    }
+
+    // 当头炮特效：炮移动到中路（col 4）
+    if (lastMove.piece.type === 'C' && lastMove.to.col === 4) {
+      triggerFx('centerCannon');
+      return;
+    }
+
+    // 吃子特效
+    if (lastMove.captured) {
       triggerFx('capture');
     }
   }, [moveHistory]);
