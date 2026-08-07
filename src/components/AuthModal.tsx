@@ -11,7 +11,7 @@ interface AuthModalProps {
 
 export const AuthModal: React.FC<AuthModalProps> = ({ onClose, initialMode = 'login' }) => {
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
-  const [email, setEmail] = useState('');
+  const [emailOrUsername, setEmailOrUsername] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
@@ -25,8 +25,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, initialMode = 'lo
     setLoading(true);
     setError('');
     
+    // 判断输入是邮箱还是用户名：包含 @ 视为邮箱，否则按用户名查邮箱
+    let loginEmail = emailOrUsername.trim();
+    if (!loginEmail.includes('@')) {
+      const { data: rpcEmail, error: rpcError } = await supabase
+        .rpc('get_email_by_username', { p_username: loginEmail });
+      if (rpcError || !rpcEmail) {
+        setError('用户名不存在');
+        setLoading(false);
+        return;
+      }
+      loginEmail = rpcEmail as string;
+    }
+    
     const { data, error } = await supabase.auth.signInWithPassword({
-      email,
+      email: loginEmail,
       password
     });
     
@@ -37,7 +50,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, initialMode = 'lo
     }
     
     if (data.user) {
-      // 获取用户资料（注册时由数据库触发器 handle_new_user 自动创建）
       const profile = await fetchProfile(data.user.id);
       if (!profile) {
         setError('用户资料加载失败，请刷新重试');
@@ -65,7 +77,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, initialMode = 'lo
     }
     
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: emailOrUsername,
       password,
       options: {
         data: {
@@ -108,12 +120,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, initialMode = 'lo
     setLoading(false);
   };
   
-  const handleGuestLogin = () => {
-    useAuthStore.getState().setGuest(true);
-    addToast('以游客身份进入', 'success');
-    onClose();
-  };
-  
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{ position: 'relative' }}>
@@ -148,13 +154,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, initialMode = 'lo
           )}
           
           <div className="form-group">
-            <label className="form-label">邮箱</label>
+            <label className="form-label">{mode === 'login' ? '用户名/邮箱' : '邮箱'}</label>
             <input
-              type="email"
+              type={mode === 'login' ? 'text' : 'email'}
               className="form-input"
-              placeholder="请输入邮箱"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
+              placeholder={mode === 'login' ? '请输入用户名或邮箱' : '请输入邮箱'}
+              value={emailOrUsername}
+              onChange={e => setEmailOrUsername(e.target.value)}
               required
             />
           </div>
@@ -190,12 +196,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose, initialMode = 'lo
             onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
           >
             {mode === 'login' ? '没有账号？立即注册' : '已有账号？立即登录'}
-          </button>
-        </div>
-        
-        <div style={{ marginTop: '16px', textAlign: 'center' }}>
-          <button className="btn btn-outline" onClick={handleGuestLogin}>
-            游客进入
           </button>
         </div>
       </div>
