@@ -221,15 +221,15 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
     }
 
     // 绘制棋子（先画非选中棋子，选中棋子最后画以实现上浮立体效果）
-    // 棋子素材按红方视角绘制（黑子倒置）。执黑视角整盘旋转 180° 后，
-    // 黑子文字自然正立、红子文字自然倒置，符合真实对弈观感，无需额外旋转。
+    // 精灵图中所有棋子文字均正立。执黑视角整盘旋转 180° 后，
+    // 需对每个棋子反向旋转 180°（upright）保持文字正立。
     if (piecesLoadedRef.current && piecesImgRef.current) {
       for (let r = 0; r < 10; r++) {
         for (let c = 0; c < 9; c++) {
           if (board[r][c] && !(selectedPiece && selectedPiece.row === r && selectedPiece.col === c)) {
             const x = BASE_OX + c * BASE_CS;
             const y = OY + r * BASE_CS;
-            drawPieceSprite(ctx, board[r][c]!, x, y, BASE_PIECE_SIZE, piecesImgRef.current);
+            drawPieceSprite(ctx, board[r][c]!, x, y, BASE_PIECE_SIZE, piecesImgRef.current, { upright: isFlipped });
           }
         }
       }
@@ -296,7 +296,8 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
           shadowColor: 'rgba(0, 0, 0, 0.45)',
           shadowBlur: 14,
           shadowOffsetX: 2,
-          shadowOffsetY: 6
+          shadowOffsetY: 6,
+          upright: isFlipped
         }
       );
     }
