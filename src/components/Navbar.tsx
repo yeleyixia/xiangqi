@@ -5,7 +5,7 @@ import { useAuthStore, useLobbyStore } from '../store';
 
 export const Navbar: React.FC = () => {
   const location = useLocation();
-  const { user, isGuest, logout } = useAuthStore();
+  const { user, logout } = useAuthStore();
   const { onlineCount } = useLobbyStore();
   const [showUserMenu, setShowUserMenu] = useState(false);
 
@@ -78,11 +78,6 @@ export const Navbar: React.FC = () => {
                 </div>
               )}
             </div>
-          ) : isGuest ? (
-            <Link to="/auth" className="btn btn-primary btn-sm">
-              <LogIn size={16} />
-              登录/注册
-            </Link>
           ) : (
             <Link to="/auth" className="btn btn-primary btn-sm">
               <LogIn size={16} />
